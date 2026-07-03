@@ -98,6 +98,55 @@ async function runCheck(browser, check) {
     };
   });
 
+  await page.click('#tab-stage');
+  await page.waitForFunction(() => {
+    const panel = document.querySelector('#panel-stage');
+    const tab = document.querySelector('#tab-stage');
+    return panel && tab && !panel.hidden && tab.classList.contains('is-active');
+  });
+  await page.evaluate(() => {
+    const background = document.querySelector('#background-color');
+    background.value = '#e9f4ff';
+    background.dispatchEvent(new Event('input', { bubbles: true }));
+
+    const grid = document.querySelector('#grid-visible');
+    grid.checked = false;
+    grid.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  await page.waitForTimeout(50);
+  await page.screenshot({
+    path: `.tmp/avatar-viewer-${check.name}-stage.png`,
+    fullPage: true,
+  });
+
+  await page.click('#tab-rig');
+  await page.waitForFunction(() => {
+    const panel = document.querySelector('#panel-rig');
+    const tab = document.querySelector('#tab-rig');
+    return panel && tab && !panel.hidden && tab.classList.contains('is-active');
+  });
+
+  let boneCount = await readBoneCount(page);
+  if (boneCount === 0) {
+    await page.selectOption('#rig-mode', 'raw');
+    await page.waitForTimeout(50);
+    boneCount = await readBoneCount(page);
+  }
+  if (check.model.endsWith('.vrm') && boneCount === 0) {
+    throw new Error(`${check.name} failed: no bones found in Rig tab`);
+  }
+  if (boneCount > 0) {
+    await page.check('#skeleton-visible');
+    await page.locator('.bone-item').first().click();
+    await page.waitForFunction(() => {
+      return document.querySelector('#bone-name')?.textContent !== '-';
+    });
+  }
+  await page.screenshot({
+    path: `.tmp/avatar-viewer-${check.name}-rig.png`,
+    fullPage: true,
+  });
+
   await page.close();
 
   if (!result.ok) {
@@ -105,4 +154,9 @@ async function runCheck(browser, check) {
   }
 
   console.log(`${check.name} ok`, result);
+}
+
+async function readBoneCount(page) {
+  const text = await page.locator('#rig-count').textContent();
+  return Number(text || 0);
 }

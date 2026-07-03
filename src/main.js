@@ -1,69 +1,66 @@
 import './styles.css';
-
-import * as THREE from 'three';
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { VRMLoaderPlugin, VRMUtils } from '@pixiv/three-vrm';
+import { AvatarViewport } from './AvatarViewport.js';
 
 const presets = new Map([
-  ['/models/avaAvatar.vrm', { name: 'Ava Avatar', format: 'VRM' }],
-  ['/models/VRM1_Constraint_Twist_Sample.vrm', { name: 'VRM Twist Sample', format: 'VRM' }],
-  ['/models/cube.gltf', { name: 'Block Man', format: 'glTF' }],
+  ['/models/avaAvatar.vrm', { name: 'Ava Avatar' }],
+  ['/models/VRM1_Constraint_Twist_Sample.vrm', { name: 'VRM Twist Sample' }],
+  ['/models/cube.gltf', { name: 'Block Man' }],
 ]);
 
 const els = {
   viewport: document.querySelector('#viewport'),
   state: document.querySelector('#model-state'),
+  progress: document.querySelector('#load-progress'),
+  tabButtons: [...document.querySelectorAll('.tab-button')],
+  tabPanels: [...document.querySelectorAll('.tab-panel')],
   select: document.querySelector('#avatar-select'),
   urlInput: document.querySelector('#avatar-url'),
   loadUrl: document.querySelector('#load-url'),
   fileInput: document.querySelector('#avatar-file'),
   resetCamera: document.querySelector('#reset-camera'),
   autoRotate: document.querySelector('#auto-rotate'),
-  progress: document.querySelector('#load-progress'),
+  backgroundColor: document.querySelector('#background-color'),
+  gridVisible: document.querySelector('#grid-visible'),
+  gridSize: document.querySelector('#grid-size'),
+  keyLight: document.querySelector('#key-light'),
+  keyLightValue: document.querySelector('#key-light-value'),
+  hemiLight: document.querySelector('#hemi-light'),
+  hemiLightValue: document.querySelector('#hemi-light-value'),
+  resetStage: document.querySelector('#reset-stage'),
+  rigMode: document.querySelector('#rig-mode'),
+  rigSearch: document.querySelector('#rig-search'),
+  skeletonVisible: document.querySelector('#skeleton-visible'),
+  selectedAxesVisible: document.querySelector('#selected-axes-visible'),
+  rigCount: document.querySelector('#rig-count'),
+  boneList: document.querySelector('#bone-list'),
+  boneEmpty: document.querySelector('#bone-empty'),
+  boneName: document.querySelector('#bone-name'),
+  boneSource: document.querySelector('#bone-source'),
+  boneParent: document.querySelector('#bone-parent'),
+  boneChildren: document.querySelector('#bone-children'),
+  boneLocalPosition: document.querySelector('#bone-local-position'),
+  boneLocalRotation: document.querySelector('#bone-local-rotation'),
+  boneWorldPosition: document.querySelector('#bone-world-position'),
   metaSource: document.querySelector('#meta-source'),
   metaFormat: document.querySelector('#meta-format'),
   metaMeshes: document.querySelector('#meta-meshes'),
   metaTriangles: document.querySelector('#meta-triangles'),
 };
 
-const scene = new THREE.Scene();
-scene.background = new THREE.Color(0xf4f7f8);
+const defaultStage = {
+  backgroundColor: '#f4f7f8',
+  gridVisible: true,
+  gridSize: 4,
+  keyLightIntensity: 2.3,
+  hemiLightIntensity: 1.7,
+};
+let selectedBoneId = null;
 
-const camera = new THREE.PerspectiveCamera(35, 1, 0.01, 100);
-camera.position.set(0, 1.35, 3.2);
-
-const renderer = new THREE.WebGLRenderer({
-  antialias: true,
-  preserveDrawingBuffer: true,
+const viewport = new AvatarViewport(els.viewport, {
+  onState: setState,
+  onProgress: setProgress,
+  onModelLoaded: updateMetadata,
 });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-renderer.outputColorSpace = THREE.SRGBColorSpace;
-els.viewport.appendChild(renderer.domElement);
-
-const controls = new OrbitControls(camera, renderer.domElement);
-controls.enableDamping = true;
-controls.target.set(0, 1.2, 0);
-controls.minDistance = 0.35;
-controls.maxDistance = 12;
-
-const keyLight = new THREE.DirectionalLight(0xffffff, 2.3);
-keyLight.position.set(2.5, 4, 3);
-scene.add(keyLight);
-scene.add(new THREE.HemisphereLight(0xddeeff, 0x887766, 1.7));
-
-const grid = new THREE.GridHelper(4, 20, 0x9aa6a8, 0xd7dddf);
-grid.position.y = 0;
-scene.add(grid);
-
-const loader = new GLTFLoader();
-loader.register((parser) => new VRMLoaderPlugin(parser));
-
-const clock = new THREE.Clock();
-let currentRoot = null;
-let currentVrm = null;
-let currentObjectUrl = null;
-let loadToken = 0;
 
 function setState(text, tone = 'neutral') {
   els.state.textContent = text;
@@ -75,207 +72,156 @@ function setProgress(text = '') {
   els.progress.textContent = text;
 }
 
-function clearCurrentModel() {
-  if (currentRoot) {
-    scene.remove(currentRoot);
-    disposeObject(currentRoot);
-  }
-  currentRoot = null;
-  currentVrm = null;
-
-  if (currentObjectUrl) {
-    URL.revokeObjectURL(currentObjectUrl);
-    currentObjectUrl = null;
-  }
+function updateMetadata(result) {
+  els.metaSource.textContent = result.source || '-';
+  els.metaFormat.textContent = result.format || '-';
+  els.metaMeshes.textContent = result.stats.meshes.toLocaleString();
+  els.metaTriangles.textContent = result.stats.triangles.toLocaleString();
+  selectedBoneId = null;
+  renderRigList();
+  renderBoneDetails(null);
 }
 
-function disposeObject(root) {
-  root.traverse((object) => {
-    if (object.geometry) {
-      object.geometry.dispose();
-    }
-    const materials = object.material ? [object.material].flat() : [];
-    materials.forEach((material) => {
-      Object.values(material).forEach((value) => {
-        if (value?.isTexture) {
-          value.dispose();
-        }
-      });
-      material.dispose?.();
-    });
+function activateTab(tabName) {
+  els.tabButtons.forEach((button) => {
+    const active = button.dataset.tab === tabName;
+    button.classList.toggle('is-active', active);
+    button.setAttribute('aria-selected', active ? 'true' : 'false');
   });
-}
-
-function getModelStats(root) {
-  let meshes = 0;
-  let triangles = 0;
-
-  root.traverse((object) => {
-    if (!object.isMesh) return;
-    meshes += 1;
-    const geometry = object.geometry;
-    if (!geometry) return;
-    if (geometry.index) {
-      triangles += geometry.index.count / 3;
-    } else if (geometry.attributes?.position) {
-      triangles += geometry.attributes.position.count / 3;
-    }
+  els.tabPanels.forEach((panel) => {
+    panel.hidden = panel.dataset.panel !== tabName;
   });
-
-  return {
-    meshes,
-    triangles: Math.round(triangles),
-  };
-}
-
-function updateMetadata({ source, format, root }) {
-  const stats = root ? getModelStats(root) : { meshes: 0, triangles: 0 };
-  els.metaSource.textContent = source || '-';
-  els.metaFormat.textContent = format || '-';
-  els.metaMeshes.textContent = stats.meshes.toLocaleString();
-  els.metaTriangles.textContent = stats.triangles.toLocaleString();
-}
-
-function frameObject(object) {
-  const box = new THREE.Box3().setFromObject(object);
-  if (box.isEmpty()) {
-    camera.position.set(0, 1.35, 3.2);
-    controls.target.set(0, 1.2, 0);
-    controls.update();
-    return;
+  if (tabName === 'rig') {
+    renderRigList();
   }
-
-  const size = box.getSize(new THREE.Vector3());
-  const center = box.getCenter(new THREE.Vector3());
-  const maxSize = Math.max(size.x, size.y, size.z);
-  const distance = maxSize / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2));
-  const viewDistance = Math.max(distance * 1.35, 1.4);
-
-  controls.target.copy(center);
-  camera.position.set(center.x, center.y + maxSize * 0.12, center.z + viewDistance);
-  camera.near = Math.max(viewDistance / 100, 0.01);
-  camera.far = Math.max(viewDistance * 100, 100);
-  camera.updateProjectionMatrix();
-  controls.update();
-}
-
-function inferFormat(path, gltf) {
-  if (gltf.userData?.vrm) return 'VRM';
-  const lower = path.toLowerCase();
-  if (lower.endsWith('.vrm')) return 'VRM';
-  if (lower.endsWith('.glb')) return 'glB';
-  if (lower.endsWith('.gltf')) return 'glTF';
-  return presets.get(path)?.format || 'Model';
-}
-
-async function loadAvatar(path, label = path, { objectUrl = null } = {}) {
-  const token = ++loadToken;
-  setState('Loading', 'loading');
-  setProgress('Starting load...');
-
-  try {
-    const gltf = await loader.loadAsync(
-      path,
-      (event) => {
-        if (event.total > 0) {
-          const percent = Math.round((event.loaded / event.total) * 100);
-          setProgress(`Loading ${percent}%`);
-        } else if (event.loaded) {
-          setProgress(`${Math.round(event.loaded / 1024).toLocaleString()} KB loaded`);
-        }
-      },
-    );
-
-    if (token !== loadToken) {
-      if (objectUrl) {
-        URL.revokeObjectURL(objectUrl);
-      }
-      return;
-    }
-
-    clearCurrentModel();
-    currentObjectUrl = objectUrl;
-
-    const vrm = gltf.userData?.vrm || null;
-    let root;
-    if (vrm) {
-      currentVrm = vrm;
-      VRMUtils.rotateVRM0?.(vrm);
-      root = vrm.scene;
-    } else {
-      root = gltf.scene;
-    }
-
-    currentRoot = root;
-    scene.add(root);
-    frameObject(root);
-
-    const format = inferFormat(path, gltf);
-    updateMetadata({ source: label, format, root });
-    setState('Ready', 'ready');
-    setProgress('');
-  } catch (error) {
-    if (token !== loadToken) {
-      if (objectUrl) {
-        URL.revokeObjectURL(objectUrl);
-      }
-      return;
-    }
-    console.error(error);
-    if (objectUrl) {
-      URL.revokeObjectURL(objectUrl);
-    }
-    clearCurrentModel();
-    updateMetadata({ source: label, format: '-', root: null });
-    setState('Failed', 'error');
-    setProgress(error instanceof Error ? error.message : String(error));
-  }
+  requestAnimationFrame(() => viewport.resize());
 }
 
 function loadSelectedAvatar() {
   const path = els.select.value;
   const preset = presets.get(path);
   els.urlInput.value = path;
-  loadAvatar(path, preset?.name || path);
+  viewport.loadAvatar(path, preset?.name || path);
 }
 
 function loadCustomUrl() {
   const path = els.urlInput.value.trim();
   if (!path) return;
-  loadAvatar(path, path);
+  viewport.loadAvatar(path, path);
 }
 
 function loadLocalFile(file) {
   if (!file) return;
-  const url = URL.createObjectURL(file);
   els.urlInput.value = file.name;
-  loadAvatar(url, file.name, { objectUrl: url });
+  viewport.loadLocalFile(file);
 }
 
-function resize() {
-  const rect = els.viewport.getBoundingClientRect();
-  const width = Math.max(1, Math.floor(rect.width));
-  const height = Math.max(1, Math.floor(rect.height));
-  renderer.setSize(width, height, false);
-  camera.aspect = width / height;
-  camera.updateProjectionMatrix();
+function getStageFormValues() {
+  return {
+    backgroundColor: els.backgroundColor.value,
+    gridVisible: els.gridVisible.checked,
+    gridSize: Number(els.gridSize.value),
+    keyLightIntensity: Number(els.keyLight.value),
+    hemiLightIntensity: Number(els.hemiLight.value),
+  };
 }
 
-function animate() {
-  requestAnimationFrame(animate);
-  const delta = clock.getDelta();
-
-  if (currentVrm?.update) {
-    currentVrm.update(delta);
-  }
-  if (els.autoRotate.checked && currentRoot) {
-    currentRoot.rotation.y += delta * 0.22;
-  }
-
-  controls.update();
-  renderer.render(scene, camera);
+function syncStageLabels() {
+  els.keyLightValue.textContent = Number(els.keyLight.value).toFixed(1);
+  els.hemiLightValue.textContent = Number(els.hemiLight.value).toFixed(1);
 }
 
+function applyStageFromForm() {
+  syncStageLabels();
+  viewport.setStage(getStageFormValues());
+}
+
+function resetStageControls() {
+  els.backgroundColor.value = defaultStage.backgroundColor;
+  els.gridVisible.checked = defaultStage.gridVisible;
+  els.gridSize.value = String(defaultStage.gridSize);
+  els.keyLight.value = String(defaultStage.keyLightIntensity);
+  els.hemiLight.value = String(defaultStage.hemiLightIntensity);
+  applyStageFromForm();
+}
+
+function renderRigList() {
+  const mode = els.rigMode.value;
+  const filter = els.rigSearch.value.trim().toLowerCase();
+  const info = viewport.getRigInfo(mode);
+  const bones = info.bones.filter((bone) => {
+    if (!filter) return true;
+    return (
+      bone.name.toLowerCase().includes(filter) ||
+      bone.sourceName.toLowerCase().includes(filter) ||
+      bone.parentName.toLowerCase().includes(filter)
+    );
+  });
+
+  els.rigCount.textContent = String(bones.length);
+  els.boneList.textContent = '';
+  els.boneEmpty.hidden = bones.length > 0;
+
+  bones.forEach((bone) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'bone-item';
+    button.dataset.boneId = bone.id;
+    button.classList.toggle('is-selected', bone.id === selectedBoneId);
+
+    const name = document.createElement('span');
+    name.className = 'bone-item-name';
+    name.textContent = bone.name;
+
+    const source = document.createElement('span');
+    source.className = 'bone-item-source';
+    source.textContent = bone.sourceName;
+
+    button.append(name, source);
+    button.addEventListener('click', () => selectRigBone(bone.id));
+    els.boneList.appendChild(button);
+  });
+}
+
+function selectRigBone(id) {
+  selectedBoneId = id;
+  const details = viewport.selectBone(id, els.rigMode.value);
+  renderBoneDetails(details);
+  renderRigList();
+}
+
+function renderBoneDetails(details) {
+  els.boneName.textContent = details?.name || '-';
+  els.boneSource.textContent = details?.sourceName || '-';
+  els.boneParent.textContent = details?.parentName || '-';
+  els.boneChildren.textContent = details ? String(details.childCount) : '-';
+  els.boneLocalPosition.textContent = details ? formatVector(details.localPosition) : '-';
+  els.boneLocalRotation.textContent = details ? formatRotation(details.localRotation) : '-';
+  els.boneWorldPosition.textContent = details ? formatVector(details.worldPosition) : '-';
+}
+
+function clearRigSelection() {
+  selectedBoneId = null;
+  viewport.selectBone('', els.rigMode.value);
+  renderBoneDetails(null);
+  renderRigList();
+}
+
+function formatVector(vector) {
+  return `x ${formatNumber(vector.x)}  y ${formatNumber(vector.y)}  z ${formatNumber(vector.z)}`;
+}
+
+function formatRotation(rotation) {
+  return `x ${formatNumber(rotation.x)}°  y ${formatNumber(rotation.y)}°  z ${formatNumber(rotation.z)}°`;
+}
+
+function formatNumber(value) {
+  return Number(value).toFixed(3);
+}
+
+els.tabButtons.forEach((button) => {
+  button.addEventListener('click', () => activateTab(button.dataset.tab));
+});
 els.select.addEventListener('change', loadSelectedAvatar);
 els.loadUrl.addEventListener('click', loadCustomUrl);
 els.urlInput.addEventListener('keydown', (event) => {
@@ -285,15 +231,28 @@ els.urlInput.addEventListener('keydown', (event) => {
   }
 });
 els.fileInput.addEventListener('change', (event) => loadLocalFile(event.target.files?.[0]));
-els.resetCamera.addEventListener('click', () => {
-  if (currentRoot) {
-    frameObject(currentRoot);
-  }
+els.resetCamera.addEventListener('click', () => viewport.resetCamera());
+els.autoRotate.addEventListener('change', () => viewport.setAutoRotate(els.autoRotate.checked));
+els.backgroundColor.addEventListener('input', applyStageFromForm);
+els.gridVisible.addEventListener('change', applyStageFromForm);
+els.gridSize.addEventListener('change', applyStageFromForm);
+els.keyLight.addEventListener('input', applyStageFromForm);
+els.hemiLight.addEventListener('input', applyStageFromForm);
+els.resetStage.addEventListener('click', resetStageControls);
+els.rigMode.addEventListener('change', clearRigSelection);
+els.rigSearch.addEventListener('input', renderRigList);
+els.skeletonVisible.addEventListener('change', () => {
+  viewport.setSkeletonVisible(els.skeletonVisible.checked);
 });
-window.addEventListener('resize', resize);
+els.selectedAxesVisible.addEventListener('change', () => {
+  viewport.setSelectedAxesVisible(els.selectedAxesVisible.checked);
+});
+window.addEventListener('resize', () => viewport.resize());
 
-resize();
-animate();
+activateTab('viewer');
+resetStageControls();
+viewport.resize();
+viewport.start();
 
 const initialModel = new URLSearchParams(window.location.search).get('model');
 if (initialModel) {
@@ -301,7 +260,7 @@ if (initialModel) {
     els.select.value = initialModel;
   }
   els.urlInput.value = initialModel;
-  loadAvatar(initialModel, presets.get(initialModel)?.name || initialModel);
+  viewport.loadAvatar(initialModel, presets.get(initialModel)?.name || initialModel);
 } else {
   loadSelectedAvatar();
 }
