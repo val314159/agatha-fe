@@ -128,14 +128,8 @@
             
             const data = {
                 email: formData.get('email'),
-                digest: digest,
-                create_convo: True
+                digest: digest
             };
-	console.log("UPDATED")
-	console.log("UPDATED")
-	console.log("UPDATED")
-	console.log("UPDATED")
-	console.log("UPDATED")
             
             try {
                 const response = await fetch('/auth/register', {
