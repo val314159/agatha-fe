@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Agatha Avatar Viewer</title>
+  </head>
+  <body>
+    <div id="app">
+      <aside class="viewer-panel" aria-label="Avatar controls">
+        <header class="panel-header">
+          <h1>Avatar Viewer</h1>
+          <span id="model-state" class="state-pill">Loading</span>
+        </header>
+
+        <label class="field">
+          <span>Avatar</span>
+          <select id="avatar-select">
+            <option value="/models/avaAvatar.vrm">Ava Avatar</option>
+            <option value="/models/VRM1_Constraint_Twist_Sample.vrm">VRM Twist Sample</option>
+            <option value="/models/cube.gltf">Block Man</option>
+          </select>
+        </label>
+
+        <div class="field">
+          <span>Custom Path</span>
+          <div class="inline-control">
+            <input id="avatar-url" type="url" placeholder="/models/avatar.vrm" />
+            <button id="load-url" type="button">Load</button>
+          </div>
+        </div>
+
+        <label class="field file-field">
+          <span>Local File</span>
+          <input id="avatar-file" type="file" accept=".vrm,.glb,.gltf,model/gltf-binary,model/gltf+json" />
+        </label>
+
+        <div class="control-row">
+          <button id="reset-camera" type="button">Reset View</button>
+          <label class="toggle">
+            <input id="auto-rotate" type="checkbox" checked />
+            <span>Auto Rotate</span>
+          </label>
+        </div>
+
+        <dl class="model-meta" aria-label="Model details">
+          <div>
+            <dt>Source</dt>
+            <dd id="meta-source">-</dd>
+          </div>
+          <div>
+            <dt>Format</dt>
+            <dd id="meta-format">-</dd>
+          </div>
+          <div>
+            <dt>Meshes</dt>
+            <dd id="meta-meshes">-</dd>
+          </div>
+          <div>
+            <dt>Triangles</dt>
+            <dd id="meta-triangles">-</dd>
+          </div>
+        </dl>
+      </aside>
+
+      <main class="viewport-shell" aria-label="Avatar preview">
+        <div id="viewport"></div>
+        <div id="load-progress" class="progress-line" hidden></div>
+      </main>
+    </div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
