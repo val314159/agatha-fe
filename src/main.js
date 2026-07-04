@@ -7,6 +7,15 @@ const presets = new Map([
   ['/models/cube.gltf', { name: 'Block Man' }],
 ]);
 
+const fbxAnimations = [
+  { path: '/models/Arm Stretching.fbx', name: 'Arm Stretching' },
+  { path: '/models/Dying.fbx', name: 'Dying' },
+  { path: '/models/Rumba Dancing.fbx', name: 'Rumba Dancing' },
+  { path: '/models/Salute.fbx', name: 'Salute' },
+  { path: '/models/Silly Dancing.fbx', name: 'Silly Dancing' },
+  { path: '/models/Texting While Standing.fbx', name: 'Texting While Standing' },
+];
+
 const els = {
   viewport: document.querySelector('#viewport'),
   state: document.querySelector('#model-state'),
@@ -57,6 +66,15 @@ const els = {
   movePhase: document.querySelector('#move-phase'),
   movePlanted: document.querySelector('#move-planted'),
   moveCorrection: document.querySelector('#move-correction'),
+  fbxCount: document.querySelector('#fbx-count'),
+  fbxList: document.querySelector('#fbx-list'),
+  fbxInspect: document.querySelector('#fbx-inspect'),
+  fbxActive: document.querySelector('#fbx-active'),
+  fbxClips: document.querySelector('#fbx-clips'),
+  fbxDuration: document.querySelector('#fbx-duration'),
+  fbxTracks: document.querySelector('#fbx-tracks'),
+  fbxBones: document.querySelector('#fbx-bones'),
+  fbxNodes: document.querySelector('#fbx-nodes'),
   metaSource: document.querySelector('#meta-source'),
   metaFormat: document.querySelector('#meta-format'),
   metaMeshes: document.querySelector('#meta-meshes'),
@@ -73,6 +91,7 @@ const defaultStage = {
 const rotationAxes = ['x', 'y', 'z'];
 let selectedBoneId = null;
 let selectedMoveId = null;
+let selectedFbxPath = fbxAnimations[0]?.path || null;
 
 const viewport = new AvatarViewport(els.viewport, {
   onState: setState,
@@ -118,6 +137,9 @@ function activateTab(tabName) {
   if (tabName === 'moves') {
     renderMoveList();
     updateMoveStatus(viewport.getMoveStatus());
+  }
+  if (tabName === 'fbx') {
+    renderFbxList();
   }
   requestAnimationFrame(() => viewport.resize());
 }
@@ -235,6 +257,74 @@ function updateMoveStatus(status) {
   els.moveCorrection.textContent = ready
     ? formatVector(status.correction)
     : '-';
+}
+
+function renderFbxList() {
+  els.fbxCount.textContent = String(fbxAnimations.length);
+  els.fbxList.textContent = '';
+
+  fbxAnimations.forEach((animation) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'fbx-item';
+    button.dataset.fbxPath = animation.path;
+    button.classList.toggle('is-selected', animation.path === selectedFbxPath);
+    button.textContent = animation.name;
+    button.addEventListener('click', () => selectFbxAnimation(animation.path));
+    els.fbxList.appendChild(button);
+  });
+
+  els.fbxInspect.disabled = !selectedFbxPath;
+}
+
+function selectFbxAnimation(path) {
+  selectedFbxPath = path;
+  renderFbxList();
+  updateFbxMetadata(null);
+}
+
+async function inspectSelectedFbx() {
+  const animation = fbxAnimations.find((item) => item.path === selectedFbxPath);
+  if (!animation) return;
+
+  els.fbxInspect.disabled = true;
+  els.fbxInspect.textContent = 'Inspecting';
+  updateFbxMetadata({ source: animation.name, loading: true });
+
+  try {
+    const metadata = await viewport.inspectFbxAnimation(animation.path, animation.name);
+    updateFbxMetadata(metadata);
+  } catch (error) {
+    console.error(error);
+    setProgress(error instanceof Error ? error.message : String(error));
+    updateFbxMetadata({ source: animation.name, error: true });
+  } finally {
+    els.fbxInspect.disabled = false;
+    els.fbxInspect.textContent = 'Inspect';
+  }
+}
+
+function updateFbxMetadata(metadata) {
+  const selected = fbxAnimations.find((item) => item.path === selectedFbxPath);
+  const hasStats = Boolean(metadata && !metadata.loading && !metadata.error);
+
+  els.fbxActive.textContent = metadata?.source || selected?.name || '-';
+  els.fbxClips.textContent = metadata?.loading
+    ? 'Loading'
+    : metadata?.error
+      ? 'Failed'
+      : hasStats
+        ? formatFbxClips(metadata.clips)
+        : '-';
+  els.fbxDuration.textContent = hasStats && metadata.duration ? `${metadata.duration.toFixed(2)}s` : '-';
+  els.fbxTracks.textContent = hasStats ? metadata.tracks.toLocaleString() : '-';
+  els.fbxBones.textContent = hasStats ? metadata.bones.toLocaleString() : '-';
+  els.fbxNodes.textContent = hasStats ? metadata.nodes.toLocaleString() : '-';
+}
+
+function formatFbxClips(clips = []) {
+  if (!clips.length) return '0';
+  return clips.map((clip) => `${clip.name} (${clip.tracks})`).join(', ');
 }
 
 function renderRigList() {
@@ -399,6 +489,7 @@ els.moveReset.addEventListener('click', resetMovePlayback);
 els.moveSpeed.addEventListener('input', applyMoveSpeed);
 els.moveHelpers.addEventListener('change', applyMoveOptions);
 els.moveFootLock.addEventListener('change', applyMoveOptions);
+els.fbxInspect.addEventListener('click', inspectSelectedFbx);
 els.rigMode.addEventListener('change', clearRigSelection);
 els.rigSearch.addEventListener('input', renderRigList);
 els.skeletonVisible.addEventListener('change', () => {
@@ -416,6 +507,8 @@ window.addEventListener('resize', () => viewport.resize());
 activateTab('viewer');
 resetStageControls();
 renderMoveList();
+renderFbxList();
+updateFbxMetadata(null);
 applyMoveSpeed();
 applyMoveOptions();
 updateMoveStatus(viewport.getMoveStatus());

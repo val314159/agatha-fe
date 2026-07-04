@@ -143,6 +143,27 @@ async function runCheck(browser, check) {
   });
   await page.click('#move-play');
 
+  await page.click('#tab-fbx');
+  await page.waitForFunction(() => {
+    const panel = document.querySelector('#panel-fbx');
+    const tab = document.querySelector('#tab-fbx');
+    return panel && tab && !panel.hidden && tab.classList.contains('is-active');
+  });
+  await page.waitForFunction(() => {
+    return document.querySelectorAll('.fbx-item').length === 6;
+  });
+  await page.locator('.fbx-item').nth(2).click();
+  await page.click('#fbx-inspect');
+  await page.waitForFunction(() => {
+    const clips = document.querySelector('#fbx-clips')?.textContent;
+    const duration = document.querySelector('#fbx-duration')?.textContent;
+    return clips && clips !== '-' && clips !== 'Loading' && duration && duration !== '-';
+  }, { timeout: 45000 });
+  await page.screenshot({
+    path: `.tmp/avatar-viewer-${check.name}-fbx.png`,
+    fullPage: true,
+  });
+
   await page.click('#tab-rig');
   await page.waitForFunction(() => {
     const panel = document.querySelector('#panel-rig');

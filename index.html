@@ -17,6 +17,7 @@
           <button id="tab-viewer" class="tab-button is-active" type="button" role="tab" aria-selected="true" aria-controls="panel-viewer" data-tab="viewer">Viewer</button>
           <button id="tab-stage" class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="panel-stage" data-tab="stage">Stage</button>
           <button id="tab-moves" class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="panel-moves" data-tab="moves">Moves</button>
+          <button id="tab-fbx" class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="panel-fbx" data-tab="fbx">FBX</button>
           <button id="tab-rig" class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="panel-rig" data-tab="rig">Rig</button>
         </nav>
 
@@ -127,6 +128,14 @@
             </label>
           </div>
 
+          <div class="move-legend" aria-label="IK helper legend">
+            <span><i class="legend-dot legend-dot-hand"></i>Hands</span>
+            <span><i class="legend-dot legend-dot-foot"></i>Feet</span>
+            <span><i class="legend-ring legend-ring-foot"></i>Foot Locks</span>
+            <span><i class="legend-dot legend-dot-elbow"></i>Elbows</span>
+            <span><i class="legend-dot legend-dot-knee"></i>Knees</span>
+          </div>
+
           <div class="rig-list-header">
             <span>Moves</span>
             <output id="move-count">0</output>
@@ -149,6 +158,43 @@
             <div>
               <dt>Correction</dt>
               <dd id="move-correction">-</dd>
+            </div>
+          </dl>
+        </section>
+
+        <section id="panel-fbx" class="tab-panel" role="tabpanel" aria-labelledby="tab-fbx" data-panel="fbx" hidden>
+          <div class="rig-list-header">
+            <span>Animations</span>
+            <output id="fbx-count">0</output>
+          </div>
+          <div id="fbx-list" class="fbx-list" aria-label="FBX animation list"></div>
+
+          <button id="fbx-inspect" type="button">Inspect</button>
+
+          <dl class="fbx-meta" aria-label="FBX animation details">
+            <div>
+              <dt>File</dt>
+              <dd id="fbx-active">-</dd>
+            </div>
+            <div>
+              <dt>Clips</dt>
+              <dd id="fbx-clips">-</dd>
+            </div>
+            <div>
+              <dt>Duration</dt>
+              <dd id="fbx-duration">-</dd>
+            </div>
+            <div>
+              <dt>Tracks</dt>
+              <dd id="fbx-tracks">-</dd>
+            </div>
+            <div>
+              <dt>Bones</dt>
+              <dd id="fbx-bones">-</dd>
+            </div>
+            <div>
+              <dt>Nodes</dt>
+              <dd id="fbx-nodes">-</dd>
             </div>
           </dl>
         </section>
