@@ -119,6 +119,30 @@ async function runCheck(browser, check) {
     fullPage: true,
   });
 
+  await page.click('#tab-moves');
+  await page.waitForFunction(() => {
+    const panel = document.querySelector('#panel-moves');
+    const tab = document.querySelector('#tab-moves');
+    return panel && tab && !panel.hidden && tab.classList.contains('is-active');
+  });
+  await page.waitForFunction(() => {
+    return document.querySelectorAll('.move-item').length === 8;
+  });
+  await page.locator('.move-item').nth(6).click();
+  await page.click('#move-play');
+  await page.waitForFunction(() => {
+    return document.querySelector('#move-play')?.textContent === 'Pause';
+  });
+  await page.waitForTimeout(250);
+  await page.waitForFunction(() => {
+    return document.querySelector('#move-phase')?.textContent !== '-';
+  });
+  await page.screenshot({
+    path: `.tmp/avatar-viewer-${check.name}-moves.png`,
+    fullPage: true,
+  });
+  await page.click('#move-play');
+
   await page.click('#tab-rig');
   await page.waitForFunction(() => {
     const panel = document.querySelector('#panel-rig');
@@ -141,6 +165,14 @@ async function runCheck(browser, check) {
     await page.waitForFunction(() => {
       return document.querySelector('#bone-name')?.textContent !== '-';
     });
+    await page.waitForFunction(() => {
+      return document.querySelector('#bone-rotation-controls')?.disabled === false;
+    });
+    await page.locator('.bone-rotation-number[data-axis="x"]').fill('15');
+    await page.waitForFunction(() => {
+      return document.querySelector('#bone-local-rotation')?.textContent.includes('x 15.000');
+    });
+    await page.click('#bone-reset-rotation');
   }
   await page.screenshot({
     path: `.tmp/avatar-viewer-${check.name}-rig.png`,

@@ -41,6 +41,22 @@ const els = {
   boneLocalPosition: document.querySelector('#bone-local-position'),
   boneLocalRotation: document.querySelector('#bone-local-rotation'),
   boneWorldPosition: document.querySelector('#bone-world-position'),
+  boneRotationControls: document.querySelector('#bone-rotation-controls'),
+  boneRotationRanges: [...document.querySelectorAll('.bone-rotation-range')],
+  boneRotationNumbers: [...document.querySelectorAll('.bone-rotation-number')],
+  boneResetRotation: document.querySelector('#bone-reset-rotation'),
+  movePlay: document.querySelector('#move-play'),
+  moveReset: document.querySelector('#move-reset'),
+  moveSpeed: document.querySelector('#move-speed'),
+  moveSpeedValue: document.querySelector('#move-speed-value'),
+  moveHelpers: document.querySelector('#move-helpers'),
+  moveFootLock: document.querySelector('#move-foot-lock'),
+  moveCount: document.querySelector('#move-count'),
+  moveList: document.querySelector('#move-list'),
+  moveActive: document.querySelector('#move-active'),
+  movePhase: document.querySelector('#move-phase'),
+  movePlanted: document.querySelector('#move-planted'),
+  moveCorrection: document.querySelector('#move-correction'),
   metaSource: document.querySelector('#meta-source'),
   metaFormat: document.querySelector('#meta-format'),
   metaMeshes: document.querySelector('#meta-meshes'),
@@ -54,13 +70,18 @@ const defaultStage = {
   keyLightIntensity: 2.3,
   hemiLightIntensity: 1.7,
 };
+const rotationAxes = ['x', 'y', 'z'];
 let selectedBoneId = null;
+let selectedMoveId = null;
 
 const viewport = new AvatarViewport(els.viewport, {
   onState: setState,
   onProgress: setProgress,
   onModelLoaded: updateMetadata,
+  onMoveStatus: updateMoveStatus,
 });
+const movePresets = viewport.getMovePresets();
+selectedMoveId = movePresets[0]?.id || null;
 
 function setState(text, tone = 'neutral') {
   els.state.textContent = text;
@@ -93,6 +114,10 @@ function activateTab(tabName) {
   });
   if (tabName === 'rig') {
     renderRigList();
+  }
+  if (tabName === 'moves') {
+    renderMoveList();
+    updateMoveStatus(viewport.getMoveStatus());
   }
   requestAnimationFrame(() => viewport.resize());
 }
@@ -143,6 +168,73 @@ function resetStageControls() {
   els.keyLight.value = String(defaultStage.keyLightIntensity);
   els.hemiLight.value = String(defaultStage.hemiLightIntensity);
   applyStageFromForm();
+}
+
+function renderMoveList() {
+  els.moveCount.textContent = String(movePresets.length);
+  els.moveList.textContent = '';
+
+  movePresets.forEach((move) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'move-item';
+    button.dataset.moveId = move.id;
+    button.classList.toggle('is-selected', move.id === selectedMoveId);
+    button.textContent = move.name;
+    button.addEventListener('click', () => selectMove(move.id));
+    els.moveList.appendChild(button);
+  });
+}
+
+function selectMove(id) {
+  selectedMoveId = id;
+  viewport.setMovePreset(id);
+  renderMoveList();
+}
+
+function toggleMovePlayback() {
+  const status = viewport.getMoveStatus();
+  const shouldPlay = !status.playing;
+
+  if (shouldPlay) {
+    els.autoRotate.checked = false;
+    viewport.setAutoRotate(false);
+  }
+  viewport.setMovePlaying(shouldPlay);
+}
+
+function resetMovePlayback() {
+  viewport.resetMove();
+  updateMoveStatus(viewport.getMoveStatus());
+}
+
+function applyMoveSpeed() {
+  const speed = Number(els.moveSpeed.value);
+  els.moveSpeedValue.textContent = `${speed.toFixed(1)}x`;
+  viewport.setMoveSpeed(speed);
+}
+
+function applyMoveOptions() {
+  viewport.setMoveOptions({
+    showHelpers: els.moveHelpers.checked,
+    footLock: els.moveFootLock.checked,
+  });
+}
+
+function updateMoveStatus(status) {
+  const ready = Boolean(status.ready);
+
+  els.movePlay.disabled = !ready;
+  els.moveReset.disabled = !ready;
+  els.movePlay.textContent = status.playing ? 'Pause' : 'Play';
+  els.moveActive.textContent = ready ? status.presetName : '-';
+  els.movePhase.textContent = ready ? `${Math.round(status.phase * 100)}%` : '-';
+  els.movePlanted.textContent = ready && status.plantedFeet.length
+    ? status.plantedFeet.join(', ')
+    : '-';
+  els.moveCorrection.textContent = ready
+    ? formatVector(status.correction)
+    : '-';
 }
 
 function renderRigList() {
@@ -198,6 +290,7 @@ function renderBoneDetails(details) {
   els.boneLocalPosition.textContent = details ? formatVector(details.localPosition) : '-';
   els.boneLocalRotation.textContent = details ? formatRotation(details.localRotation) : '-';
   els.boneWorldPosition.textContent = details ? formatVector(details.worldPosition) : '-';
+  syncBoneRotationControls(details?.localRotation || null);
 }
 
 function clearRigSelection() {
@@ -205,6 +298,68 @@ function clearRigSelection() {
   viewport.selectBone('', els.rigMode.value);
   renderBoneDetails(null);
   renderRigList();
+}
+
+function syncBoneRotationControls(rotation) {
+  const enabled = Boolean(rotation);
+  const values = rotation || { x: 0, y: 0, z: 0 };
+
+  els.boneRotationControls.disabled = !enabled;
+  rotationAxes.forEach((axis) => {
+    setRotationControlValue(axis, values[axis]);
+  });
+}
+
+function handleBoneRotationInput(event) {
+  const input = event.currentTarget;
+  const axis = input.dataset.axis;
+  if (!rotationAxes.includes(axis) || input.value === '') return;
+
+  const value = Number(input.value);
+  if (!Number.isFinite(value)) return;
+
+  setRotationControlValue(axis, clampRotationValue(value));
+  const details = viewport.setSelectedBoneRotation(readBoneRotationControls());
+  renderBoneDetails(details);
+}
+
+function resetSelectedBoneRotation() {
+  const details = viewport.resetSelectedBoneRotation();
+  renderBoneDetails(details);
+}
+
+function readBoneRotationControls() {
+  return rotationAxes.reduce((rotation, axis) => {
+    const input = findRotationNumber(axis);
+    rotation[axis] = Number(input?.value || 0);
+    return rotation;
+  }, {});
+}
+
+function setRotationControlValue(axis, value) {
+  const formatted = formatRotationInput(value);
+  const range = findRotationRange(axis);
+  const number = findRotationNumber(axis);
+
+  if (range) range.value = formatted;
+  if (number) number.value = formatted;
+}
+
+function findRotationRange(axis) {
+  return els.boneRotationRanges.find((input) => input.dataset.axis === axis);
+}
+
+function findRotationNumber(axis) {
+  return els.boneRotationNumbers.find((input) => input.dataset.axis === axis);
+}
+
+function clampRotationValue(value) {
+  return Math.max(-180, Math.min(180, value));
+}
+
+function formatRotationInput(value) {
+  const cleanValue = Math.abs(Number(value)) < 0.0005 ? 0 : Number(value);
+  return cleanValue.toFixed(1);
 }
 
 function formatVector(vector) {
@@ -239,6 +394,11 @@ els.gridSize.addEventListener('change', applyStageFromForm);
 els.keyLight.addEventListener('input', applyStageFromForm);
 els.hemiLight.addEventListener('input', applyStageFromForm);
 els.resetStage.addEventListener('click', resetStageControls);
+els.movePlay.addEventListener('click', toggleMovePlayback);
+els.moveReset.addEventListener('click', resetMovePlayback);
+els.moveSpeed.addEventListener('input', applyMoveSpeed);
+els.moveHelpers.addEventListener('change', applyMoveOptions);
+els.moveFootLock.addEventListener('change', applyMoveOptions);
 els.rigMode.addEventListener('change', clearRigSelection);
 els.rigSearch.addEventListener('input', renderRigList);
 els.skeletonVisible.addEventListener('change', () => {
@@ -247,10 +407,18 @@ els.skeletonVisible.addEventListener('change', () => {
 els.selectedAxesVisible.addEventListener('change', () => {
   viewport.setSelectedAxesVisible(els.selectedAxesVisible.checked);
 });
+[...els.boneRotationRanges, ...els.boneRotationNumbers].forEach((input) => {
+  input.addEventListener('input', handleBoneRotationInput);
+});
+els.boneResetRotation.addEventListener('click', resetSelectedBoneRotation);
 window.addEventListener('resize', () => viewport.resize());
 
 activateTab('viewer');
 resetStageControls();
+renderMoveList();
+applyMoveSpeed();
+applyMoveOptions();
+updateMoveStatus(viewport.getMoveStatus());
 viewport.resize();
 viewport.start();
 

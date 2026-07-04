@@ -16,6 +16,7 @@
         <nav class="tabs" role="tablist" aria-label="Studio views">
           <button id="tab-viewer" class="tab-button is-active" type="button" role="tab" aria-selected="true" aria-controls="panel-viewer" data-tab="viewer">Viewer</button>
           <button id="tab-stage" class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="panel-stage" data-tab="stage">Stage</button>
+          <button id="tab-moves" class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="panel-moves" data-tab="moves">Moves</button>
           <button id="tab-rig" class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="panel-rig" data-tab="rig">Rig</button>
         </nav>
 
@@ -104,6 +105,54 @@
           <button id="reset-stage" type="button">Reset Stage</button>
         </section>
 
+        <section id="panel-moves" class="tab-panel" role="tabpanel" aria-labelledby="tab-moves" data-panel="moves" hidden>
+          <div class="move-toolbar">
+            <button id="move-play" type="button">Play</button>
+            <button id="move-reset" type="button">Reset</button>
+          </div>
+
+          <label class="field">
+            <span>Speed <output id="move-speed-value" for="move-speed">1.0x</output></span>
+            <input id="move-speed" type="range" min="0.25" max="1.75" step="0.05" value="1" />
+          </label>
+
+          <div class="control-stack">
+            <label class="toggle toggle-row">
+              <input id="move-helpers" type="checkbox" checked />
+              <span>IK Helpers</span>
+            </label>
+            <label class="toggle toggle-row">
+              <input id="move-foot-lock" type="checkbox" checked />
+              <span>Foot Lock</span>
+            </label>
+          </div>
+
+          <div class="rig-list-header">
+            <span>Moves</span>
+            <output id="move-count">0</output>
+          </div>
+          <div id="move-list" class="move-list" aria-label="Move list"></div>
+
+          <dl class="move-meta" aria-label="Move details">
+            <div>
+              <dt>Move</dt>
+              <dd id="move-active">-</dd>
+            </div>
+            <div>
+              <dt>Phase</dt>
+              <dd id="move-phase">-</dd>
+            </div>
+            <div>
+              <dt>Planted</dt>
+              <dd id="move-planted">-</dd>
+            </div>
+            <div>
+              <dt>Correction</dt>
+              <dd id="move-correction">-</dd>
+            </div>
+          </dl>
+        </section>
+
         <section id="panel-rig" class="tab-panel" role="tabpanel" aria-labelledby="tab-rig" data-panel="rig" hidden>
           <label class="field">
             <span>Bone Set</span>
@@ -128,13 +177,6 @@
               <span>Selected Axes</span>
             </label>
           </div>
-
-          <div class="rig-list-header">
-            <span>Bones</span>
-            <output id="rig-count">0</output>
-          </div>
-          <div id="bone-list" class="bone-list" aria-label="Bone list"></div>
-          <p id="bone-empty" class="empty-note" hidden>No bones found for this view.</p>
 
           <dl class="bone-details" aria-label="Selected bone details">
             <div>
@@ -166,6 +208,36 @@
               <dd id="bone-world-position">-</dd>
             </div>
           </dl>
+
+          <fieldset id="bone-rotation-controls" class="bone-rotation" disabled>
+            <legend class="sr-only">Rotation</legend>
+            <div class="bone-rotation-header">
+              <span>Rotation</span>
+              <button id="bone-reset-rotation" class="bone-reset" type="button">Reset</button>
+            </div>
+            <label class="rotation-row">
+              <span>X</span>
+              <input class="bone-rotation-range" data-axis="x" type="range" min="-180" max="180" step="0.1" value="0" />
+              <input class="bone-rotation-number" data-axis="x" type="number" min="-180" max="180" step="0.1" value="0" aria-label="Rotation X degrees" />
+            </label>
+            <label class="rotation-row">
+              <span>Y</span>
+              <input class="bone-rotation-range" data-axis="y" type="range" min="-180" max="180" step="0.1" value="0" />
+              <input class="bone-rotation-number" data-axis="y" type="number" min="-180" max="180" step="0.1" value="0" aria-label="Rotation Y degrees" />
+            </label>
+            <label class="rotation-row">
+              <span>Z</span>
+              <input class="bone-rotation-range" data-axis="z" type="range" min="-180" max="180" step="0.1" value="0" />
+              <input class="bone-rotation-number" data-axis="z" type="number" min="-180" max="180" step="0.1" value="0" aria-label="Rotation Z degrees" />
+            </label>
+          </fieldset>
+
+          <div class="rig-list-header">
+            <span>Bones</span>
+            <output id="rig-count">0</output>
+          </div>
+          <div id="bone-list" class="bone-list" aria-label="Bone list"></div>
+          <p id="bone-empty" class="empty-note" hidden>No bones found for this view.</p>
         </section>
       </aside>
 
