@@ -48,6 +48,45 @@ export class ModelLoader {
     }
   }
 
+  async loadFbxAnimation(path, label = path, onProgress = null) {
+    if (onProgress) onProgress(`Loading ${label}...`);
+
+    const root = await this.fbxLoader.loadAsync(path, (event) => {
+      if (!onProgress) return;
+      if (event.total > 0) {
+        const percent = Math.round((event.loaded / event.total) * 100);
+        onProgress(`Loading ${percent}%`);
+      } else if (event.loaded) {
+        onProgress(`${Math.round(event.loaded / 1024).toLocaleString()} KB loaded`);
+      }
+    });
+
+    const clips = root.animations || [];
+    const duration = clips.reduce((max, clip) => Math.max(max, clip.duration), 0);
+    const tracks = clips.reduce((total, clip) => total + clip.tracks.length, 0);
+
+    let bones = 0;
+    let nodes = 0;
+    root.traverse((object) => {
+      nodes += 1;
+      if (object.isBone) bones += 1;
+    });
+
+    if (onProgress) onProgress('');
+    return {
+      source: label,
+      path,
+      rootName: root.name || '-',
+      clipCount: clips.length,
+      clips,
+      duration,
+      tracks,
+      bones,
+      nodes,
+      root,
+    };
+  }
+
   async inspectFbxAnimation(path, label = path, onProgress = null) {
     if (onProgress) onProgress(`Inspecting ${label}...`);
 

@@ -20,6 +20,12 @@ export class AvatarViewport {
     this.currentRoot = null;
     this.currentVrm = null;
     this.currentObjectUrl = null;
+    this.fbx = {
+      root: null,
+      mixer: null,
+      path: null,
+      playing: false,
+    };
   }
 
   start() {
@@ -62,6 +68,10 @@ export class AvatarViewport {
 
     if (this.moveSystem.move.playing) {
       this.moveSystem.emitStatus();
+    }
+
+    if (this.fbx.playing && this.fbx.mixer) {
+      this.fbx.mixer.update(delta);
     }
 
     this.stage.render();
@@ -146,7 +156,100 @@ export class AvatarViewport {
     }
   }
 
+  async playFbxAnimation(path, label = path) {
+    this.stopFbxAnimation();
+    this.callbacks.onState?.('Loading FBX', 'loading');
+    this.callbacks.onProgress?.('Loading animation...');
+
+    try {
+      const result = await this.modelLoader.loadFbxAnimation(path, label, (text) => {
+        this.callbacks.onProgress?.(text);
+      });
+      if (!result || result.clips.length === 0) {
+        throw new Error('No animation clips found');
+      }
+
+      if (this.currentRoot) {
+        this.currentRoot.visible = false;
+      }
+
+      this.fbx.root = result.root;
+      this.fbx.path = path;
+      this.stage.scene.add(result.root);
+      this.fitFbxRoot(result.root);
+
+      this.fbx.mixer = new THREE.AnimationMixer(result.root);
+      result.clips.forEach((clip) => {
+        const action = this.fbx.mixer.clipAction(clip);
+        action.setEffectiveTimeScale(1);
+        action.play();
+      });
+      this.fbx.playing = true;
+
+      this.stage.frameObject(result.root);
+      this.callbacks.onState?.('Playing FBX', 'ready');
+      this.callbacks.onProgress?.('');
+      return result;
+    } catch (error) {
+      console.error(error);
+      this.stopFbxAnimation();
+      this.callbacks.onState?.('Failed', 'error');
+      this.callbacks.onProgress?.(error instanceof Error ? error.message : String(error));
+      throw error;
+    }
+  }
+
+  stopFbxAnimation() {
+    if (!this.fbx.root) return;
+
+    if (this.fbx.mixer) {
+      this.fbx.mixer.stopAllAction();
+      this.fbx.mixer = null;
+    }
+
+    this.stage.scene.remove(this.fbx.root);
+    disposeObject(this.fbx.root);
+    this.fbx.root = null;
+    this.fbx.path = null;
+    this.fbx.playing = false;
+
+    if (this.currentRoot) {
+      this.currentRoot.visible = true;
+      this.stage.frameObject(this.currentRoot);
+      this.callbacks.onState?.('Ready', 'ready');
+    } else {
+      this.callbacks.onState?.('No model', 'neutral');
+    }
+  }
+
+  getFbxStatus() {
+    return {
+      ready: Boolean(this.fbx.root),
+      playing: this.fbx.playing,
+      path: this.fbx.path,
+    };
+  }
+
+  fitFbxRoot(root) {
+    if (!this.currentRoot) return;
+
+    const currentBox = new THREE.Box3().setFromObject(this.currentRoot);
+    const currentHeight = currentBox.getSize(new THREE.Vector3()).y;
+    if (currentHeight <= 0) return;
+
+    const fbxBox = new THREE.Box3().setFromObject(root);
+    const fbxHeight = fbxBox.getSize(new THREE.Vector3()).y;
+    if (fbxHeight <= 0) return;
+
+    const scale = currentHeight / fbxHeight;
+    if (scale > 0 && scale < 100) {
+      root.scale.setScalar(scale);
+    }
+  }
+
   clearCurrentModel() {
+    this.stopFbxAnimation();
+
     if (this.currentRoot) {
       this.stage.scene.remove(this.currentRoot);
       disposeObject(this.currentRoot);

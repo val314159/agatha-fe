@@ -69,6 +69,8 @@ const els = {
   fbxCount: document.querySelector('#fbx-count'),
   fbxList: document.querySelector('#fbx-list'),
   fbxInspect: document.querySelector('#fbx-inspect'),
+  fbxPlay: document.querySelector('#fbx-play'),
+  fbxStop: document.querySelector('#fbx-stop'),
   fbxActive: document.querySelector('#fbx-active'),
   fbxClips: document.querySelector('#fbx-clips'),
   fbxDuration: document.querySelector('#fbx-duration'),
@@ -92,6 +94,7 @@ const rotationAxes = ['x', 'y', 'z'];
 let selectedBoneId = null;
 let selectedMoveId = null;
 let selectedFbxPath = fbxAnimations[0]?.path || null;
+let playingFbxPath = null;
 
 const viewport = new AvatarViewport(els.viewport, {
   onState: setState,
@@ -269,18 +272,30 @@ function renderFbxList() {
     button.className = 'fbx-item';
     button.dataset.fbxPath = animation.path;
     button.classList.toggle('is-selected', animation.path === selectedFbxPath);
+    button.classList.toggle('is-playing', animation.path === playingFbxPath);
     button.textContent = animation.name;
     button.addEventListener('click', () => selectFbxAnimation(animation.path));
     els.fbxList.appendChild(button);
   });
 
   els.fbxInspect.disabled = !selectedFbxPath;
+  updateFbxToolbar();
 }
 
 function selectFbxAnimation(path) {
   selectedFbxPath = path;
   renderFbxList();
   updateFbxMetadata(null);
+}
+
+function updateFbxToolbar() {
+  const selected = Boolean(selectedFbxPath);
+  const playing = Boolean(playingFbxPath);
+  const selectedIsPlaying = selectedFbxPath === playingFbxPath;
+
+  els.fbxPlay.disabled = !selected || selectedIsPlaying;
+  els.fbxPlay.textContent = selectedIsPlaying ? 'Playing' : 'Play';
+  els.fbxStop.disabled = !playing;
 }
 
 async function inspectSelectedFbx() {
@@ -302,6 +317,31 @@ async function inspectSelectedFbx() {
     els.fbxInspect.disabled = false;
     els.fbxInspect.textContent = 'Inspect';
   }
+}
+
+async function playSelectedFbx() {
+  const animation = fbxAnimations.find((item) => item.path === selectedFbxPath);
+  if (!animation) return;
+
+  els.fbxPlay.disabled = true;
+  els.fbxPlay.textContent = 'Loading';
+
+  try {
+    await viewport.playFbxAnimation(animation.path, animation.name);
+    playingFbxPath = animation.path;
+  } catch (error) {
+    console.error(error);
+    setProgress(error instanceof Error ? error.message : String(error));
+    playingFbxPath = null;
+  } finally {
+    renderFbxList();
+  }
+}
+
+function stopFbxPlayback() {
+  viewport.stopFbxAnimation();
+  playingFbxPath = null;
+  renderFbxList();
 }
 
 function updateFbxMetadata(metadata) {
@@ -490,6 +530,8 @@ els.moveSpeed.addEventListener('input', applyMoveSpeed);
 els.moveHelpers.addEventListener('change', applyMoveOptions);
 els.moveFootLock.addEventListener('change', applyMoveOptions);
 els.fbxInspect.addEventListener('click', inspectSelectedFbx);
+els.fbxPlay.addEventListener('click', playSelectedFbx);
+els.fbxStop.addEventListener('click', stopFbxPlayback);
 els.rigMode.addEventListener('change', clearRigSelection);
 els.rigSearch.addEventListener('input', renderRigList);
 els.skeletonVisible.addEventListener('change', () => {
