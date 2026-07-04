@@ -84,6 +84,8 @@ const els = {
   avaActive: document.querySelector('#ava-active'),
   avaDuration: document.querySelector('#ava-duration'),
   avaTracks: document.querySelector('#ava-tracks'),
+  avaSpeed: document.querySelector('#ava-speed'),
+  avaSpeedValue: document.querySelector('#ava-speed-value'),
   metaSource: document.querySelector('#meta-source'),
   metaFormat: document.querySelector('#meta-format'),
   metaMeshes: document.querySelector('#meta-meshes'),
@@ -111,6 +113,7 @@ const viewport = new AvatarViewport(els.viewport, {
   onProgress: setProgress,
   onModelLoaded: updateMetadata,
   onMoveStatus: updateMoveStatus,
+  onAvaStatus: updateAvaStatus,
 });
 const movePresets = viewport.getMovePresets();
 selectedMoveId = movePresets[0]?.id || null;
@@ -270,6 +273,12 @@ function applyMoveOptions() {
     showHelpers: els.moveHelpers.checked,
     footLock: els.moveFootLock.checked,
   });
+}
+
+function applyAvaSpeed() {
+  const speed = Number(els.avaSpeed.value);
+  els.avaSpeedValue.textContent = `${speed.toFixed(1)}x`;
+  viewport.setAvaTimeScale(speed);
 }
 
 function updateMoveStatus(status) {
@@ -471,6 +480,14 @@ function updateAvaMetadata() {
   els.avaTracks.textContent = move.ava.tracks?.length ? String(move.ava.tracks.length) : '-';
 }
 
+function updateAvaStatus(status) {
+  const statusTime = document.querySelector('#ava-status-time');
+  if (statusTime) {
+    const pct = status.duration > 0 ? Math.round((status.time / status.duration) * 100) : 0;
+    statusTime.textContent = `${status.time.toFixed(2)}s / ${status.duration.toFixed(2)}s (${pct}%)`;
+  }
+}
+
 function renderRigList() {
   const mode = els.rigMode.value;
   const filter = els.rigSearch.value.trim().toLowerCase();
@@ -638,6 +655,7 @@ els.fbxPlay.addEventListener('click', playSelectedFbx);
 els.fbxStop.addEventListener('click', stopFbxPlayback);
 els.avaPlay.addEventListener('click', playSelectedAva);
 els.avaStop.addEventListener('click', stopAvaPlayback);
+els.avaSpeed.addEventListener('input', applyAvaSpeed);
 els.rigMode.addEventListener('change', clearRigSelection);
 els.rigSearch.addEventListener('input', renderRigList);
 els.skeletonVisible.addEventListener('change', () => {
@@ -659,6 +677,7 @@ renderFbxList();
 updateFbxMetadata(null);
 applyMoveSpeed();
 applyMoveOptions();
+applyAvaSpeed();
 updateMoveStatus(viewport.getMoveStatus());
 viewport.resize();
 viewport.start();

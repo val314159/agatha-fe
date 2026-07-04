@@ -66,6 +66,15 @@ export class AvatarViewport {
     }
 
     this.rig.applyManualBoneRotations('humanoid');
+
+    if (this.fbx.playing && this.fbx.mixer) {
+      this.fbx.mixer.update(delta);
+    }
+
+    if (this.movePlayer) {
+      this.movePlayer.update(delta);
+    }
+
     if (this.currentVrm?.update) {
       this.currentVrm.update(delta);
     }
@@ -76,12 +85,8 @@ export class AvatarViewport {
       this.moveSystem.emitStatus();
     }
 
-    if (this.fbx.playing && this.fbx.mixer) {
-      this.fbx.mixer.update(delta);
-    }
-
-    if (this.movePlayer) {
-      this.movePlayer.update(delta);
+    if (this.movePlayer?.action) {
+      this.callbacks.onAvaStatus?.(this.movePlayer.getStatus());
     }
 
     this.stage.render();
@@ -336,6 +341,8 @@ export class AvatarViewport {
     const move = this.avaMoves.find((m) => m.name === name);
     if (!move) return false;
 
+    this.moveSystem.setPlaying(false);
+
     const baker = new AvaToAvar(this.currentVrm, { modelPath: this.currentAvatarPath || 'avatar' });
     const avar = baker.bake(move.ava);
     this.movePlayer.play(avar);
@@ -356,6 +363,14 @@ export class AvatarViewport {
 
   getAvaMoves() {
     return this.avaMoves;
+  }
+
+  setAvaTimeScale(scale) {
+    this.movePlayer?.setTimeScale(scale);
+  }
+
+  getAvaMoveStatus() {
+    return this.movePlayer?.getStatus() || { playing: false, time: 0, duration: 0 };
   }
 
   getRigInfo(mode) {
