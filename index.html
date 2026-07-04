@@ -18,6 +18,7 @@
           <button id="tab-stage" class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="panel-stage" data-tab="stage">Stage</button>
           <button id="tab-moves" class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="panel-moves" data-tab="moves">Moves</button>
           <button id="tab-fbx" class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="panel-fbx" data-tab="fbx">FBX</button>
+          <button id="tab-ava" class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="panel-ava" data-tab="ava">AVA</button>
           <button id="tab-rig" class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="panel-rig" data-tab="rig">Rig</button>
         </nav>
 
@@ -199,6 +200,34 @@
             <div>
               <dt>Nodes</dt>
               <dd id="fbx-nodes">-</dd>
+            </div>
+          </dl>
+        </section>
+
+        <section id="panel-ava" class="tab-panel" role="tabpanel" aria-labelledby="tab-ava" data-panel="ava" hidden>
+          <div class="fbx-toolbar">
+            <button id="ava-play" type="button" disabled>Play</button>
+            <button id="ava-stop" type="button" disabled>Stop</button>
+          </div>
+
+          <div class="rig-list-header">
+            <span>AVA Moves</span>
+            <output id="ava-count">0</output>
+          </div>
+          <div id="ava-list" class="fbx-list" aria-label="AVA move list"></div>
+
+          <dl class="fbx-meta" aria-label="AVA move details">
+            <div>
+              <dt>Move</dt>
+              <dd id="ava-active">-</dd>
+            </div>
+            <div>
+              <dt>Duration</dt>
+              <dd id="ava-duration">-</dd>
+            </div>
+            <div>
+              <dt>Tracks</dt>
+              <dd id="ava-tracks">-</dd>
             </div>
           </dl>
         </section>

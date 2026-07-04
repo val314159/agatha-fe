@@ -4,6 +4,9 @@ import { Stage } from './Stage.js';
 import { ModelLoader } from './ModelLoader.js';
 import { Rig } from './Rig.js';
 import { MoveSystem } from './MoveSystem.js';
+import { FbxToAva } from './FbxToAva.js';
+import { AvaToAvar } from './AvaToAvar.js';
+import { MovePlayer } from './MovePlayer.js';
 
 export class AvatarViewport {
   constructor(container, callbacks = {}) {
@@ -19,6 +22,7 @@ export class AvatarViewport {
     this.frameId = null;
     this.currentRoot = null;
     this.currentVrm = null;
+    this.currentAvatarPath = null;
     this.currentObjectUrl = null;
     this.fbx = {
       root: null,
@@ -26,6 +30,8 @@ export class AvatarViewport {
       path: null,
       playing: false,
     };
+    this.avaMoves = [];
+    this.movePlayer = null;
   }
 
   start() {
@@ -74,6 +80,10 @@ export class AvatarViewport {
       this.fbx.mixer.update(delta);
     }
 
+    if (this.movePlayer) {
+      this.movePlayer.update(delta);
+    }
+
     this.stage.render();
   }
 
@@ -113,9 +123,11 @@ export class AvatarViewport {
       this.currentObjectUrl = objectUrl;
       this.currentRoot = result.root;
       this.currentVrm = result.vrm;
+      this.currentAvatarPath = path;
       this.stage.scene.add(result.root);
       this.rig.indexBones(result.root, result.vrm);
       this.moveSystem.setupMoveRig(result.root, result.vrm);
+      this.movePlayer = new MovePlayer(result.root);
       this.stage.frameObject(result.root);
 
       this.callbacks.onModelLoaded?.(result);
@@ -249,6 +261,9 @@ export class AvatarViewport {
 
   clearCurrentModel() {
     this.stopFbxAnimation();
+    this.stopAvaMove();
+    this.movePlayer = null;
+    this.avaMoves = [];
 
     if (this.currentRoot) {
       this.stage.scene.remove(this.currentRoot);
@@ -256,6 +271,7 @@ export class AvatarViewport {
     }
     this.currentRoot = null;
     this.currentVrm = null;
+    this.currentAvatarPath = null;
 
     if (this.currentObjectUrl) {
       URL.revokeObjectURL(this.currentObjectUrl);
@@ -292,6 +308,54 @@ export class AvatarViewport {
 
   resetMove() {
     this.moveSystem.reset();
+  }
+
+  async loadAvaMoves(paths, onProgress = null) {
+    const converter = new FbxToAva();
+    const moves = [];
+    for (let i = 0; i < paths.length; i++) {
+      const { path, name } = paths[i];
+      if (onProgress) onProgress(`Converting ${name}...`);
+      try {
+        const root = await this.modelLoader.fbxLoader.loadAsync(path);
+        const ava = converter.convert(root, name, path);
+        moves.push({ path, name, ava });
+        disposeObject(root);
+      } catch (error) {
+        console.error(`Failed to convert ${name} to AVA`, error);
+      }
+    }
+    if (onProgress) onProgress('');
+    this.avaMoves = moves;
+    return moves;
+  }
+
+  playAvaMove(name) {
+    if (!this.currentVrm || !this.movePlayer) return false;
+
+    const move = this.avaMoves.find((m) => m.name === name);
+    if (!move) return false;
+
+    const baker = new AvaToAvar(this.currentVrm, { modelPath: this.currentAvatarPath || 'avatar' });
+    const avar = baker.bake(move.ava);
+    this.movePlayer.play(avar);
+    return true;
+  }
+
+  stopAvaMove() {
+    this.movePlayer?.stop();
+  }
+
+  getAvaStatus() {
+    return {
+      ready: this.avaMoves.length > 0,
+      playing: this.movePlayer?.action?.isRunning?.() || false,
+      moveCount: this.avaMoves.length,
+    };
+  }
+
+  getAvaMoves() {
+    return this.avaMoves;
   }
 
   getRigInfo(mode) {
