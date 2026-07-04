@@ -60,6 +60,7 @@ export class AvaToAvar {
       positionScale,
       duration: ava.duration,
       tracks,
+      locks: ava.locks ?? [],
     };
   }
 

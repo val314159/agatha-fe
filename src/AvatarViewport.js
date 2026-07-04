@@ -6,6 +6,7 @@ import { Rig } from './Rig.js';
 import { MoveSystem } from './MoveSystem.js';
 import { FbxToAva } from './FbxToAva.js';
 import { AvaToAvar } from './AvaToAvar.js';
+import { AvarToAvak } from './AvarToAvak.js';
 import { MovePlayer } from './MovePlayer.js';
 
 export class AvatarViewport {
@@ -32,6 +33,11 @@ export class AvatarViewport {
     };
     this.avaMoves = [];
     this.movePlayer = null;
+    this.useAvak = true;
+  }
+
+  setUseAvak(enabled) {
+    this.useAvak = enabled;
   }
 
   start() {
@@ -343,9 +349,16 @@ export class AvatarViewport {
 
     this.moveSystem.setPlaying(false);
 
-    const baker = new AvaToAvar(this.currentVrm, { modelPath: this.currentAvatarPath || 'avatar' });
-    const avar = baker.bake(move.ava);
-    this.movePlayer.play(avar);
+    const avarBaker = new AvaToAvar(this.currentVrm, { modelPath: this.currentAvatarPath || 'avatar' });
+    const avar = avarBaker.bake(move.ava);
+
+    let clip = avar;
+    if (this.useAvak) {
+      const avakBaker = new AvarToAvak(this.currentVrm, { modelPath: this.currentAvatarPath || 'avatar' });
+      clip = avakBaker.bake(avar) || avar;
+    }
+
+    this.movePlayer.play(clip);
     return true;
   }
 

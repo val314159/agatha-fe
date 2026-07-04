@@ -66,17 +66,6 @@ const els = {
   movePhase: document.querySelector('#move-phase'),
   movePlanted: document.querySelector('#move-planted'),
   moveCorrection: document.querySelector('#move-correction'),
-  fbxCount: document.querySelector('#fbx-count'),
-  fbxList: document.querySelector('#fbx-list'),
-  fbxInspect: document.querySelector('#fbx-inspect'),
-  fbxPlay: document.querySelector('#fbx-play'),
-  fbxStop: document.querySelector('#fbx-stop'),
-  fbxActive: document.querySelector('#fbx-active'),
-  fbxClips: document.querySelector('#fbx-clips'),
-  fbxDuration: document.querySelector('#fbx-duration'),
-  fbxTracks: document.querySelector('#fbx-tracks'),
-  fbxBones: document.querySelector('#fbx-bones'),
-  fbxNodes: document.querySelector('#fbx-nodes'),
   avaPlay: document.querySelector('#ava-play'),
   avaStop: document.querySelector('#ava-stop'),
   avaCount: document.querySelector('#ava-count'),
@@ -86,6 +75,7 @@ const els = {
   avaTracks: document.querySelector('#ava-tracks'),
   avaSpeed: document.querySelector('#ava-speed'),
   avaSpeedValue: document.querySelector('#ava-speed-value'),
+  avaUseAvak: document.querySelector('#ava-use-avak'),
   metaSource: document.querySelector('#meta-source'),
   metaFormat: document.querySelector('#meta-format'),
   metaMeshes: document.querySelector('#meta-meshes'),
@@ -102,8 +92,6 @@ const defaultStage = {
 const rotationAxes = ['x', 'y', 'z'];
 let selectedBoneId = null;
 let selectedMoveId = null;
-let selectedFbxPath = fbxAnimations[0]?.path || null;
-let playingFbxPath = null;
 let selectedAvaMove = null;
 let playingAvaMove = null;
 let avaMoves = [];
@@ -153,9 +141,6 @@ function activateTab(tabName) {
   if (tabName === 'moves') {
     renderMoveList();
     updateMoveStatus(viewport.getMoveStatus());
-  }
-  if (tabName === 'fbx') {
-    renderFbxList();
   }
   if (tabName === 'ava') {
     renderAvaList();
@@ -295,111 +280,6 @@ function updateMoveStatus(status) {
   els.moveCorrection.textContent = ready
     ? formatVector(status.correction)
     : '-';
-}
-
-function renderFbxList() {
-  els.fbxCount.textContent = String(fbxAnimations.length);
-  els.fbxList.textContent = '';
-
-  fbxAnimations.forEach((animation) => {
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.className = 'fbx-item';
-    button.dataset.fbxPath = animation.path;
-    button.classList.toggle('is-selected', animation.path === selectedFbxPath);
-    button.classList.toggle('is-playing', animation.path === playingFbxPath);
-    button.textContent = animation.name;
-    button.addEventListener('click', () => selectFbxAnimation(animation.path));
-    els.fbxList.appendChild(button);
-  });
-
-  els.fbxInspect.disabled = !selectedFbxPath;
-  updateFbxToolbar();
-}
-
-function selectFbxAnimation(path) {
-  selectedFbxPath = path;
-  renderFbxList();
-  updateFbxMetadata(null);
-}
-
-function updateFbxToolbar() {
-  const selected = Boolean(selectedFbxPath);
-  const playing = Boolean(playingFbxPath);
-  const selectedIsPlaying = selectedFbxPath === playingFbxPath;
-
-  els.fbxPlay.disabled = !selected || selectedIsPlaying;
-  els.fbxPlay.textContent = selectedIsPlaying ? 'Playing' : 'Play';
-  els.fbxStop.disabled = !playing;
-}
-
-async function inspectSelectedFbx() {
-  const animation = fbxAnimations.find((item) => item.path === selectedFbxPath);
-  if (!animation) return;
-
-  els.fbxInspect.disabled = true;
-  els.fbxInspect.textContent = 'Inspecting';
-  updateFbxMetadata({ source: animation.name, loading: true });
-
-  try {
-    const metadata = await viewport.inspectFbxAnimation(animation.path, animation.name);
-    updateFbxMetadata(metadata);
-  } catch (error) {
-    console.error(error);
-    setProgress(error instanceof Error ? error.message : String(error));
-    updateFbxMetadata({ source: animation.name, error: true });
-  } finally {
-    els.fbxInspect.disabled = false;
-    els.fbxInspect.textContent = 'Inspect';
-  }
-}
-
-async function playSelectedFbx() {
-  const animation = fbxAnimations.find((item) => item.path === selectedFbxPath);
-  if (!animation) return;
-
-  els.fbxPlay.disabled = true;
-  els.fbxPlay.textContent = 'Loading';
-
-  try {
-    await viewport.playFbxAnimation(animation.path, animation.name);
-    playingFbxPath = animation.path;
-  } catch (error) {
-    console.error(error);
-    setProgress(error instanceof Error ? error.message : String(error));
-    playingFbxPath = null;
-  } finally {
-    renderFbxList();
-  }
-}
-
-function stopFbxPlayback() {
-  viewport.stopFbxAnimation();
-  playingFbxPath = null;
-  renderFbxList();
-}
-
-function updateFbxMetadata(metadata) {
-  const selected = fbxAnimations.find((item) => item.path === selectedFbxPath);
-  const hasStats = Boolean(metadata && !metadata.loading && !metadata.error);
-
-  els.fbxActive.textContent = metadata?.source || selected?.name || '-';
-  els.fbxClips.textContent = metadata?.loading
-    ? 'Loading'
-    : metadata?.error
-      ? 'Failed'
-      : hasStats
-        ? formatFbxClips(metadata.clips)
-        : '-';
-  els.fbxDuration.textContent = hasStats && metadata.duration ? `${metadata.duration.toFixed(2)}s` : '-';
-  els.fbxTracks.textContent = hasStats ? metadata.tracks.toLocaleString() : '-';
-  els.fbxBones.textContent = hasStats ? metadata.bones.toLocaleString() : '-';
-  els.fbxNodes.textContent = hasStats ? metadata.nodes.toLocaleString() : '-';
-}
-
-function formatFbxClips(clips = []) {
-  if (!clips.length) return '0';
-  return clips.map((clip) => `${clip.name} (${clip.tracks})`).join(', ');
 }
 
 function renderAvaList() {
@@ -650,12 +530,15 @@ els.moveReset.addEventListener('click', resetMovePlayback);
 els.moveSpeed.addEventListener('input', applyMoveSpeed);
 els.moveHelpers.addEventListener('change', applyMoveOptions);
 els.moveFootLock.addEventListener('change', applyMoveOptions);
-els.fbxInspect.addEventListener('click', inspectSelectedFbx);
-els.fbxPlay.addEventListener('click', playSelectedFbx);
-els.fbxStop.addEventListener('click', stopFbxPlayback);
 els.avaPlay.addEventListener('click', playSelectedAva);
 els.avaStop.addEventListener('click', stopAvaPlayback);
 els.avaSpeed.addEventListener('input', applyAvaSpeed);
+els.avaUseAvak.addEventListener('change', () => {
+  viewport.setUseAvak(els.avaUseAvak.checked);
+  if (playingAvaMove) {
+    playSelectedAva();
+  }
+});
 els.rigMode.addEventListener('change', clearRigSelection);
 els.rigSearch.addEventListener('input', renderRigList);
 els.skeletonVisible.addEventListener('change', () => {
@@ -673,8 +556,6 @@ window.addEventListener('resize', () => viewport.resize());
 activateTab('viewer');
 resetStageControls();
 renderMoveList();
-renderFbxList();
-updateFbxMetadata(null);
 applyMoveSpeed();
 applyMoveOptions();
 applyAvaSpeed();

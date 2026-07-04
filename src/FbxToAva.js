@@ -57,7 +57,19 @@ export class FbxToAva {
       duration: this.getDuration(root),
       skeleton: this.extractSkeleton(root),
       tracks: this.extractTracks(root),
+      locks: this.getLocks(),
     };
+  }
+
+  getLocks() {
+    return [
+      { bone: 'leftFoot', planted: true },
+      { bone: 'rightFoot', planted: true },
+      { bone: 'leftToes', planted: false },
+      { bone: 'rightToes', planted: false },
+      { bone: 'leftHand', planted: false },
+      { bone: 'rightHand', planted: false },
+    ];
   }
 
   inferUnitScale(root) {
