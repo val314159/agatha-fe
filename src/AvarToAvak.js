@@ -206,7 +206,7 @@ export class AvarToAvak {
       const position = new THREE.Vector3();
       footNode.getWorldPosition(position);
       const prev = prevFootPositions[lock.bone];
-      const velocity = prev && t > 0 ? position.distanceTo(prev) / (t - prev.t) : Infinity;
+      const velocity = prev && t > 0 ? position.distanceTo(prev.position) / (t - prev.t) : Infinity;
       const nearGround = Math.abs(position.y - this.groundHeight) < this.plantHeightThreshold;
       const slow = !Number.isFinite(velocity) || velocity < this.plantVelocityThreshold;
 
