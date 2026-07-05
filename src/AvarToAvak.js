@@ -13,12 +13,6 @@ const VRM_LIMB_CHAINS = {
   rightArm: ['rightUpperArm', 'rightLowerArm', 'rightHand'],
 };
 
-const CHAIN_BONE_HUMAN_NAMES = Object.fromEntries(
-  Object.entries(VRM_LIMB_CHAINS).flatMap(([chainName, bones]) =>
-    bones.map((bone, index) => [bone, { chainName, index }])
-  )
-);
-
 export class SimpleBalanceSolver {
   constructor(options = {}) {
     this.maxCorrection = options.maxCorrection ?? 0.05;
@@ -73,48 +67,57 @@ export class AvarToAvak {
     const anchors = {};
     const prevFootPositions = {};
 
+    const legChains = ['leftLeg', 'rightLeg'];
     const correctedKeyframes = new Map();
-    for (const [chainName, bones] of Object.entries(VRM_LIMB_CHAINS)) {
+    for (const chainName of legChains) {
       correctedKeyframes.set(chainName, {
         upperLeg: { times: [], values: [] },
         lowerLeg: { times: [], values: [] },
         end: { times: [], values: [] },
-        wasActive: false,
       });
     }
     const hipKeyframes = { times: [], values: [] };
+    let anyActive = false;
 
     for (let i = 0; i < times.length; i += 1) {
       const t = times[i];
       action.time = t;
       mixer.update(0);
+      this.vrm.update?.(0);
       this.vrm.scene.updateWorldMatrix(true, true);
 
       this.updatePlantedStates(plantedLocks, prevFootPositions, anchors, t);
 
-      const solve = () => {
-        for (const lock of plantedLocks) {
-          if (!lock.isActive || !lock.chain) continue;
-          const limbChain = getNormalizedLimbChain(this.vrm, lock.chain.chainName);
-          if (!limbChain) continue;
-          solveLimbIK(limbChain, lock.anchor, null);
-        }
-      };
+      if (plantedLocks.some((l) => l.isActive)) {
+        anyActive = true;
+        const solve = () => {
+          for (const lock of plantedLocks) {
+            if (!lock.isActive || !lock.chain) continue;
+            const limbChain = getNormalizedLimbChain(this.vrm, lock.chain.chainName);
+            if (!limbChain) continue;
+            solveLimbIK(limbChain, lock.anchor, null);
+          }
+        };
 
-      for (let iter = 0; iter < this.iterations; iter += 1) {
-        solve();
-        if (this.balanceSolver) {
-          const plantedFeet = this.getPlantedFeet(plantedLocks);
-          this.balanceSolver.solve(this.vrm, plantedFeet, solve);
+        for (let iter = 0; iter < this.iterations; iter += 1) {
+          solve();
+          if (this.balanceSolver) {
+            const plantedFeet = this.getPlantedFeet(plantedLocks);
+            this.balanceSolver.solve(this.vrm, plantedFeet, solve);
+          }
         }
       }
 
-      this.extractLegKeyframes(plantedLocks, correctedKeyframes, t);
+      this.extractLegKeyframes(correctedKeyframes, t);
       this.extractHipKeyframe(hipKeyframes, t);
     }
 
     action.stop();
     mixer.stopAllAction();
+
+    if (!anyActive) {
+      return avar;
+    }
 
     const newTracks = this.buildTracks(correctedKeyframes, hipKeyframes);
     const correctedBones = new Set(newTracks.map((track) => track.bone));
@@ -171,6 +174,7 @@ export class AvarToAvak {
     for (const lock of locks) {
       const chainName = this.getChainName(lock.bone);
       if (!chainName) continue;
+      if (chainName === 'leftArm' || chainName === 'rightArm') continue;
       const chain = VRM_LIMB_CHAINS[chainName];
       plantedLocks.push({
         bone: lock.bone,
@@ -206,7 +210,8 @@ export class AvarToAvak {
       const position = new THREE.Vector3();
       footNode.getWorldPosition(position);
       const prev = prevFootPositions[lock.bone];
-      const velocity = prev && t > 0 ? position.distanceTo(prev.position) / (t - prev.t) : Infinity;
+      const dt = t - (prev?.t ?? 0);
+      const velocity = prev && dt > 0 ? position.distanceTo(prev.position) / dt : Infinity;
       const nearGround = Math.abs(position.y - this.groundHeight) < this.plantHeightThreshold;
       const slow = !Number.isFinite(velocity) || velocity < this.plantVelocityThreshold;
 
@@ -237,16 +242,15 @@ export class AvarToAvak {
       .filter(Boolean);
   }
 
-  extractLegKeyframes(plantedLocks, correctedKeyframes, t) {
-    for (const lock of plantedLocks) {
-      if (!lock.chain || !lock.isActive) continue;
-      const upper = this.vrm.humanoid?.getNormalizedBoneNode(lock.chain.upperLeg);
-      const lower = this.vrm.humanoid?.getNormalizedBoneNode(lock.chain.lowerLeg);
-      const end = this.vrm.humanoid?.getNormalizedBoneNode(lock.chain.end);
+  extractLegKeyframes(correctedKeyframes, t) {
+    for (const chainName of ['leftLeg', 'rightLeg']) {
+      const bones = VRM_LIMB_CHAINS[chainName];
+      const upper = this.vrm.humanoid?.getNormalizedBoneNode(bones[0]);
+      const lower = this.vrm.humanoid?.getNormalizedBoneNode(bones[1]);
+      const end = this.vrm.humanoid?.getNormalizedBoneNode(bones[2]);
       if (!upper || !lower || !end) continue;
 
-      const kfs = correctedKeyframes.get(lock.chainName);
-      kfs.wasActive = true;
+      const kfs = correctedKeyframes.get(chainName);
       kfs.upperLeg.times.push(t);
       kfs.upperLeg.values.push(
         upper.quaternion.x,
@@ -280,7 +284,8 @@ export class AvarToAvak {
 
   buildTracks(correctedKeyframes, hipKeyframes) {
     const tracks = [];
-    for (const [chainName, bones] of Object.entries(VRM_LIMB_CHAINS)) {
+    for (const chainName of ['leftLeg', 'rightLeg']) {
+      const bones = VRM_LIMB_CHAINS[chainName];
       const kfs = correctedKeyframes.get(chainName);
       if (!kfs) continue;
 
