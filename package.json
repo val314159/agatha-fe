@@ -8,8 +8,9 @@
     "build": "vite build",
     "preview": "vite preview --host 0.0.0.0",
     "smoke": "node scripts/smoke-avatar-viewer.mjs",
-    "test": "npm run test:ik",
-    "test:ik": "node scripts/test-ik.mjs"
+    "test": "npm run test:ik && npm run test:balance",
+    "test:ik": "node scripts/test-ik.mjs",
+    "test:balance": "node scripts/test-balance.mjs"
   },
   "dependencies": {
     "@pixiv/three-vrm": "^3.5.4",
