@@ -31,6 +31,19 @@ const HUMAN_TO_VRM = {
   'rightToes': 'rightToes',
 };
 
+export const BODY_REGIONS = {
+  lower: new Set([
+    'hips', 'spine',
+    'leftUpperLeg', 'leftLowerLeg', 'leftFoot', 'leftToes',
+    'rightUpperLeg', 'rightLowerLeg', 'rightFoot', 'rightToes',
+  ]),
+  upper: new Set([
+    'chest', 'upperChest', 'neck', 'head',
+    'leftShoulder', 'leftUpperArm', 'leftLowerArm', 'leftHand',
+    'rightShoulder', 'rightUpperArm', 'rightLowerArm', 'rightHand',
+  ]),
+};
+
 export class AvaToAvar {
   constructor(vrm, options = {}) {
     if (!vrm) throw new Error('AvaToAvar requires a VRM instance');
@@ -47,6 +60,7 @@ export class AvaToAvar {
     return {
       format: 'avar',
       version: '1.0',
+      kind: 'full',
       name: ava.name,
       source: ava.source,
       target: {
@@ -182,4 +196,14 @@ function computeSourceWorldRotations(ava) {
     );
   }
   return worldRotations;
+}
+
+export function splitByRegion(avar, region) {
+  const bones = BODY_REGIONS[region];
+  if (!bones) throw new Error(`Unknown body region: ${region}`);
+  return {
+    ...avar,
+    kind: region,
+    tracks: avar.tracks.filter((t) => bones.has(t.bone)),
+  };
 }

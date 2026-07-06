@@ -19,6 +19,7 @@ export class AvarToAvak {
       ...avar,
       format: 'avak',
       version: '1.0',
+      kind: avar.kind || 'full',
     };
   }
 
@@ -80,6 +81,14 @@ export class AvarToAvak {
     console.log(`[AVAK]   VRM rest:  left foot y=${vrmLeftFootRest.y.toFixed(3)}  right foot y=${vrmRightFootRest.y.toFixed(3)}`);
     console.log(`[AVAK]   Left foot:  y=[${minLeftY.toFixed(3)} .. ${maxLeftY.toFixed(3)}]  below ground: ${leftBelow}/${times.length}  plantable: ${leftPlantable}/${times.length}`);
     console.log(`[AVAK]   Right foot: y=[${minRightY.toFixed(3)} .. ${maxRightY.toFixed(3)}]  below ground: ${rightBelow}/${times.length}  plantable: ${rightPlantable}/${times.length}`);
+
+    const locks = avar.locks || [];
+    if (locks.length > 0) {
+      const lockSummary = locks.map((l) => `${l.bone}=${l.planted ? 'planted' : 'free'}`).join(', ');
+      console.log(`[AVAK]   Locks (${locks.length}): ${lockSummary}`);
+    } else {
+      console.log(`[AVAK]   Locks: none`);
+    }
 
     if (leftBelow > 0 || rightBelow > 0) {
       console.log(`[AVAK]   ⚠ ${leftBelow + rightBelow} frames have feet below ground (y<${GROUND_HEIGHT}) — IK solve needed to lift feet`);
