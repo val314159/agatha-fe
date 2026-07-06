@@ -1,5 +1,6 @@
 import './styles.css';
 import { AvatarViewport } from './AvatarViewport.js';
+import { splitByRegion } from './AvaToAvar.js';
 
 const presets = new Map([
   ['/models/avaAvatar.vrm', { name: 'Ava Avatar' }],
@@ -69,8 +70,16 @@ const els = {
   moveCorrection: document.querySelector('#move-correction'),
   avaPlay: document.querySelector('#ava-play'),
   avaStop: document.querySelector('#ava-stop'),
-  avaCount: document.querySelector('#ava-count'),
-  avaList: document.querySelector('#ava-list'),
+  avaLists: {
+    full: document.querySelector('#ava-list-full'),
+    upper: document.querySelector('#ava-list-upper'),
+    lower: document.querySelector('#ava-list-lower'),
+  },
+  avaCounts: {
+    full: document.querySelector('#ava-count-full'),
+    upper: document.querySelector('#ava-count-upper'),
+    lower: document.querySelector('#ava-count-lower'),
+  },
   avaActive: document.querySelector('#ava-active'),
   avaDuration: document.querySelector('#ava-duration'),
   avaTracks: document.querySelector('#ava-tracks'),
@@ -94,7 +103,9 @@ const rotationAxes = ['x', 'y', 'z'];
 let selectedBoneId = null;
 let selectedMoveId = null;
 let selectedAvaMove = null;
+let selectedAvaKind = 'full';
 let playingAvaMove = null;
+let playingAvaKind = null;
 let avaMoves = [];
 
 const viewport = new AvatarViewport(els.viewport, {
@@ -174,7 +185,9 @@ async function loadLocalFile(file) {
 async function reloadAvaMoves() {
   viewport.stopAvaMove();
   playingAvaMove = null;
+  playingAvaKind = null;
   selectedAvaMove = null;
+  selectedAvaKind = 'full';
   avaMoves = await viewport.loadAvaMoves(fbxAnimations, setProgress);
   renderAvaList();
   updateAvaToolbar();
@@ -283,29 +296,39 @@ function updateMoveStatus(status) {
     : '-';
 }
 
+const AVA_KINDS = ['full', 'upper', 'lower'];
+
 function renderAvaList() {
   const moves = viewport.getAvaMoves();
-  els.avaCount.textContent = String(moves.length);
-  els.avaList.textContent = '';
+  for (const kind of AVA_KINDS) {
+    const list = els.avaLists[kind];
+    const count = els.avaCounts[kind];
+    list.textContent = '';
+    count.textContent = String(moves.length);
 
-  moves.forEach((move) => {
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.className = 'fbx-item';
-    button.dataset.avaName = move.name;
-    button.classList.toggle('is-selected', move.name === selectedAvaMove);
-    button.classList.toggle('is-playing', move.name === playingAvaMove);
-    button.textContent = move.name;
-    button.addEventListener('click', () => selectAvaMove(move.name));
-    els.avaList.appendChild(button);
-  });
+    moves.forEach((move) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'fbx-item';
+      button.dataset.avaName = move.name;
+      button.dataset.avaKind = kind;
+      const isSelected = move.name === selectedAvaMove && kind === selectedAvaKind;
+      const isPlaying = move.name === playingAvaMove && kind === playingAvaKind;
+      button.classList.toggle('is-selected', isSelected);
+      button.classList.toggle('is-playing', isPlaying);
+      button.textContent = move.name;
+      button.addEventListener('click', () => selectAvaMove(move.name, kind));
+      list.appendChild(button);
+    });
+  }
 
   updateAvaToolbar();
   updateAvaMetadata();
 }
 
-function selectAvaMove(name) {
+function selectAvaMove(name, kind) {
   selectedAvaMove = name;
+  selectedAvaKind = kind;
   renderAvaList();
   updateAvaToolbar();
   updateAvaMetadata();
@@ -314,7 +337,7 @@ function selectAvaMove(name) {
 function updateAvaToolbar() {
   const selected = Boolean(selectedAvaMove);
   const playing = Boolean(playingAvaMove);
-  const selectedIsPlaying = selectedAvaMove === playingAvaMove;
+  const selectedIsPlaying = selectedAvaMove === playingAvaMove && selectedAvaKind === playingAvaKind;
 
   els.avaPlay.disabled = !selected || selectedIsPlaying;
   els.avaPlay.textContent = selectedIsPlaying ? 'Playing' : 'Play';
@@ -328,14 +351,16 @@ function playSelectedAva() {
   els.avaPlay.textContent = 'Baking';
 
   try {
-    viewport.playAvaMove(selectedAvaMove);
+    viewport.playAvaMove(selectedAvaMove, selectedAvaKind);
     playingAvaMove = selectedAvaMove;
+    playingAvaKind = selectedAvaKind;
     els.autoRotate.checked = false;
     viewport.setAutoRotate(false);
   } catch (error) {
     console.error(error);
     setProgress(error instanceof Error ? error.message : String(error));
     playingAvaMove = null;
+    playingAvaKind = null;
   } finally {
     renderAvaList();
   }
@@ -344,6 +369,7 @@ function playSelectedAva() {
 function stopAvaPlayback() {
   viewport.stopAvaMove();
   playingAvaMove = null;
+  playingAvaKind = null;
   renderAvaList();
 }
 
@@ -356,7 +382,7 @@ function updateAvaMetadata() {
     return;
   }
 
-  els.avaActive.textContent = move.name;
+  els.avaActive.textContent = `${move.name} (${selectedAvaKind})`;
   els.avaDuration.textContent = move.ava.duration ? `${move.ava.duration.toFixed(2)}s` : '-';
   els.avaTracks.textContent = move.ava.tracks?.length ? String(move.ava.tracks.length) : '-';
 }

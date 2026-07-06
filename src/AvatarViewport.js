@@ -5,7 +5,7 @@ import { ModelLoader } from './ModelLoader.js';
 import { Rig } from './Rig.js';
 import { MoveSystem } from './MoveSystem.js';
 import { FbxToAva } from './FbxToAva.js';
-import { AvaToAvar } from './AvaToAvar.js';
+import { AvaToAvar, splitByRegion } from './AvaToAvar.js';
 import { AvarToAvak } from './AvarToAvak.js';
 import { MovePlayer } from './MovePlayer.js';
 
@@ -353,7 +353,7 @@ export class AvatarViewport {
     return moves;
   }
 
-  playAvaMove(name) {
+  playAvaMove(name, kind = 'full') {
     if (!this.currentVrm || !this.movePlayer) return false;
 
     const move = this.avaMoves.find((m) => m.name === name);
@@ -366,7 +366,11 @@ export class AvatarViewport {
     this.currentVrm.update?.(0);
 
     const avarBaker = new AvaToAvar(this.currentVrm, { modelPath: this.currentAvatarPath || 'avatar' });
-    const avar = avarBaker.bake(move.ava);
+    let avar = avarBaker.bake(move.ava);
+
+    if (kind !== 'full') {
+      avar = splitByRegion(avar, kind);
+    }
 
     let clip = avar;
     if (this.useAvak) {
