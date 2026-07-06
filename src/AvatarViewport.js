@@ -19,7 +19,7 @@ export class AvatarViewport {
       onMoveStatus: (status) => this.callbacks.onMoveStatus?.(status),
     });
 
-    this.clock = new THREE.Clock();
+    this.timer = new THREE.Timer();
     this.frameId = null;
     this.currentRoot = null;
     this.currentVrm = null;
@@ -56,7 +56,8 @@ export class AvatarViewport {
   }
 
   renderFrame() {
-    const delta = this.clock.getDelta();
+    this.timer.update();
+    const delta = this.timer.getDelta();
     let rootRotated = false;
 
     if (this.stage.stage.autoRotate && this.currentRoot) {
