@@ -5,9 +5,7 @@ import { ModelLoader } from './ModelLoader.js';
 import { Rig } from './Rig.js';
 import { MoveSystem } from './MoveSystem.js';
 import { FbxToAva } from './FbxToAva.js';
-import { AvaToAvar, splitByRegion } from './AvaToAvar.js';
-import { AvarToAvak } from './AvarToAvak.js';
-import { MovePlayer } from './MovePlayer.js';
+import { Avatar } from './Avatar.js';
 
 export class AvatarViewport {
   constructor(container, callbacks = {}) {
@@ -21,9 +19,7 @@ export class AvatarViewport {
 
     this.timer = new THREE.Timer();
     this.frameId = null;
-    this.currentRoot = null;
-    this.currentVrm = null;
-    this.currentAvatarPath = null;
+    this.avatar = null;
     this.currentObjectUrl = null;
     this.fbx = {
       root: null,
@@ -32,12 +28,12 @@ export class AvatarViewport {
       playing: false,
     };
     this.avaMoves = [];
-    this.movePlayer = null;
     this.useAvak = false;
   }
 
   setUseAvak(enabled) {
     this.useAvak = enabled;
+    this.avatar?.setUseAvak(enabled);
   }
 
   start() {
@@ -60,9 +56,9 @@ export class AvatarViewport {
     const delta = this.timer.getDelta();
     let rootRotated = false;
 
-    if (this.stage.stage.autoRotate && this.currentRoot) {
-      this.currentRoot.rotation.y += delta * 0.22;
-      this.currentRoot.updateWorldMatrix(true, true);
+    if (this.stage.stage.autoRotate && this.avatar?.root) {
+      this.avatar.root.rotation.y += delta * 0.22;
+      this.avatar.root.updateWorldMatrix(true, true);
       rootRotated = true;
     }
 
@@ -78,13 +74,10 @@ export class AvatarViewport {
       this.fbx.mixer.update(delta);
     }
 
-    if (this.movePlayer) {
-      this.movePlayer.update(delta);
+    if (this.avatar) {
+      this.avatar.update(delta);
     }
 
-    if (this.currentVrm?.update) {
-      this.currentVrm.update(delta);
-    }
     this.rig.applyManualBoneRotations('raw');
     this.rig.updateSelectedAxes();
 
@@ -92,8 +85,8 @@ export class AvatarViewport {
       this.moveSystem.emitStatus();
     }
 
-    if (this.movePlayer?.action) {
-      this.callbacks.onAvaStatus?.(this.movePlayer.getStatus());
+    if (this.avatar?.isAvaPlaying()) {
+      this.callbacks.onAvaStatus?.(this.avatar.getAvaMoveStatus());
     }
 
     this.stage.render();
@@ -112,20 +105,17 @@ export class AvatarViewport {
   }
 
   resetCamera() {
-    if (this.currentRoot) {
-      this.stage.frameObject(this.currentRoot);
+    if (this.avatar?.root) {
+      this.stage.frameObject(this.avatar.root);
     }
   }
 
   resetPose() {
-    this.stopAvaMove();
+    this.avatar?.stopAnimation();
     this.stopFbxAnimation();
     this.moveSystem.setPlaying(false);
     this.moveSystem.reset();
-    if (this.currentVrm) {
-      this.currentVrm.humanoid?.resetNormalizedPose?.();
-      this.currentVrm.update?.(0);
-    }
+    this.avatar?.resetPose();
   }
 
   async loadAvatar(path, label = path, options = {}) {
@@ -144,13 +134,10 @@ export class AvatarViewport {
 
       this.clearCurrentModel();
       this.currentObjectUrl = objectUrl;
-      this.currentRoot = result.root;
-      this.currentVrm = result.vrm;
-      this.currentAvatarPath = path;
+      this.avatar = new Avatar(result.vrm, result.root, path, { useAvak: this.useAvak });
       this.stage.scene.add(result.root);
       this.rig.indexBones(result.root, result.vrm);
       this.moveSystem.setupMoveRig(result.root, result.vrm);
-      this.movePlayer = new MovePlayer(result.root);
       this.stage.frameObject(result.root);
 
       this.callbacks.onModelLoaded?.(result);
@@ -204,8 +191,8 @@ export class AvatarViewport {
         throw new Error('No animation clips found');
       }
 
-      if (this.currentRoot) {
-        this.currentRoot.visible = false;
+      if (this.avatar?.root) {
+        this.avatar.root.visible = false;
       }
 
       this.fbx.root = result.root;
@@ -248,9 +235,9 @@ export class AvatarViewport {
     this.fbx.path = null;
     this.fbx.playing = false;
 
-    if (this.currentRoot) {
-      this.currentRoot.visible = true;
-      this.stage.frameObject(this.currentRoot);
+    if (this.avatar?.root) {
+      this.avatar.root.visible = true;
+      this.stage.frameObject(this.avatar.root);
       this.callbacks.onState?.('Ready', 'ready');
     } else {
       this.callbacks.onState?.('No model', 'neutral');
@@ -266,9 +253,9 @@ export class AvatarViewport {
   }
 
   fitFbxRoot(root) {
-    if (!this.currentRoot) return;
+    if (!this.avatar?.root) return;
 
-    const currentBox = new THREE.Box3().setFromObject(this.currentRoot);
+    const currentBox = new THREE.Box3().setFromObject(this.avatar.root);
     const currentHeight = currentBox.getSize(new THREE.Vector3()).y;
     if (currentHeight <= 0) return;
 
@@ -284,17 +271,9 @@ export class AvatarViewport {
 
   clearCurrentModel() {
     this.stopFbxAnimation();
-    this.stopAvaMove();
-    this.movePlayer = null;
+    this.avatar?.dispose();
+    this.avatar = null;
     this.avaMoves = [];
-
-    if (this.currentRoot) {
-      this.stage.scene.remove(this.currentRoot);
-      disposeObject(this.currentRoot);
-    }
-    this.currentRoot = null;
-    this.currentVrm = null;
-    this.currentAvatarPath = null;
 
     if (this.currentObjectUrl) {
       URL.revokeObjectURL(this.currentObjectUrl);
@@ -354,42 +333,23 @@ export class AvatarViewport {
   }
 
   playAvaMove(name, kind = 'full') {
-    if (!this.currentVrm || !this.movePlayer) return false;
+    if (!this.avatar) return false;
 
     const move = this.avaMoves.find((m) => m.name === name);
     if (!move) return false;
 
     this.moveSystem.setPlaying(false);
-    this.stopAvaMove();
-
-    this.currentVrm.humanoid?.resetNormalizedPose?.();
-    this.currentVrm.update?.(0);
-
-    const avarBaker = new AvaToAvar(this.currentVrm, { modelPath: this.currentAvatarPath || 'avatar' });
-    let avar = avarBaker.bake(move.ava);
-
-    if (kind !== 'full') {
-      avar = splitByRegion(avar, kind);
-    }
-
-    let clip = avar;
-    if (this.useAvak) {
-      const avakBaker = new AvarToAvak(this.currentVrm, { modelPath: this.currentAvatarPath || 'avatar' });
-      clip = avakBaker.bake(avar) || avar;
-    }
-
-    this.movePlayer.play(clip);
-    return true;
+    return this.avatar.playAvaMove(move, kind);
   }
 
   stopAvaMove() {
-    this.movePlayer?.stop();
+    this.avatar?.stopAnimation();
   }
 
   getAvaStatus() {
     return {
       ready: this.avaMoves.length > 0,
-      playing: this.movePlayer?.action?.isRunning?.() || false,
+      playing: this.avatar?.isAvaPlaying() || false,
       moveCount: this.avaMoves.length,
     };
   }
@@ -399,11 +359,11 @@ export class AvatarViewport {
   }
 
   setAvaTimeScale(scale) {
-    this.movePlayer?.setTimeScale(scale);
+    this.avatar?.setAvaTimeScale(scale);
   }
 
   getAvaMoveStatus() {
-    return this.movePlayer?.getStatus() || { playing: false, time: 0, duration: 0 };
+    return this.avatar?.getAvaMoveStatus() || { playing: false, time: 0, duration: 0 };
   }
 
   getRigInfo(mode) {
