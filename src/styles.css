@@ -112,7 +112,7 @@ button:hover {
 
 .tabs {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 0.35rem;
   border: 1px solid #cbd6d9;
   border-radius: 8px;
@@ -480,8 +480,85 @@ output {
   gap: 0.5rem;
 }
 
+.beat-count {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.45rem;
+}
+
+.beat-count-step {
+  display: grid;
+  place-items: center;
+  min-height: 3rem;
+  border: 1px solid #d4dddf;
+  border-radius: 10px;
+  background: #ffffff;
+  color: #526268;
+  font-size: 1.2rem;
+  font-weight: 800;
+}
+
+.beat-count-step.is-active {
+  border-color: #247c87;
+  background: #e6f6f8;
+  color: #172024;
+  box-shadow: 0 6px 18px rgb(36 124 135 / 0.16);
+}
+
+.beat-sample-panel {
+  display: grid;
+  gap: 0.65rem;
+  border: 1px solid #d4dddf;
+  border-radius: 8px;
+  background: #f8fbfb;
+  padding: 0.65rem;
+}
+
+.beat-toolbar,
+.beat-nudge-grid {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.beat-toolbar {
+  grid-template-columns: 1fr;
+}
+
+.beat-toolbar-compact,
+.beat-nudge-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.beat-nudge-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.beat-toolbar button,
+.beat-nudge-grid button {
+  min-height: 2.15rem;
+  padding: 0 0.35rem;
+  font-size: 0.74rem;
+  font-weight: 800;
+}
+
+.beat-status {
+  margin: 0;
+  border: 1px solid #d4dddf;
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 0.65rem;
+  color: #526268;
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+
+.beat-detected-meta {
+  padding-top: 0.55rem;
+}
+
 .move-meta,
-.fbx-meta {
+.fbx-meta,
+.beat-meta {
   display: grid;
   gap: 0.5rem;
   margin: 0;
@@ -490,7 +567,8 @@ output {
 }
 
 .move-meta div,
-.fbx-meta div {
+.fbx-meta div,
+.beat-meta div {
   display: grid;
   grid-template-columns: 5.4rem minmax(0, 1fr);
   gap: 0.55rem;
@@ -498,7 +576,8 @@ output {
 }
 
 .move-meta dt,
-.fbx-meta dt {
+.fbx-meta dt,
+.beat-meta dt {
   color: #6b7b80;
   font-size: 0.68rem;
   font-weight: 800;
@@ -506,7 +585,8 @@ output {
 }
 
 .move-meta dd,
-.fbx-meta dd {
+.fbx-meta dd,
+.beat-meta dd {
   min-width: 0;
   margin: 0;
   overflow-wrap: anywhere;

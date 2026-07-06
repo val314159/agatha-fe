@@ -1,5 +1,6 @@
 import './styles.css';
 import { AvatarViewport } from './AvatarViewport.js';
+import { BeatTracker } from './BeatTracker.js';
 import { splitByRegion } from './AvaToAvar.js';
 
 const presets = new Map([
@@ -69,6 +70,33 @@ const els = {
   movePhase: document.querySelector('#move-phase'),
   movePlanted: document.querySelector('#move-planted'),
   moveCorrection: document.querySelector('#move-correction'),
+  beatCountSteps: [...document.querySelectorAll('.beat-count-step')],
+  beatBpm: document.querySelector('#beat-bpm'),
+  beatBpmDisplay: document.querySelector('#beat-bpm-display'),
+  beatMode: document.querySelector('#beat-mode'),
+  beatConfidence: document.querySelector('#beat-confidence'),
+  beatOffset: document.querySelector('#beat-offset'),
+  beatOffsetValue: document.querySelector('#beat-offset-value'),
+  beatOffsetDisplay: document.querySelector('#beat-offset-display'),
+  beatPhase: document.querySelector('#beat-phase'),
+  beatTap: document.querySelector('#beat-tap'),
+  beatSetBeat: document.querySelector('#beat-set-beat'),
+  beatSetDownbeat: document.querySelector('#beat-set-downbeat'),
+  beatHalf: document.querySelector('#beat-half'),
+  beatDouble: document.querySelector('#beat-double'),
+  beatReset: document.querySelector('#beat-reset'),
+  beatLock: document.querySelector('#beat-lock'),
+  beatStartNextBeat: document.querySelector('#beat-start-next-beat'),
+  beatStartNextBar: document.querySelector('#beat-start-next-bar'),
+  beatSampleMic: document.querySelector('#beat-sample-mic'),
+  beatStopSampling: document.querySelector('#beat-stop-sampling'),
+  beatUseDetected: document.querySelector('#beat-use-detected'),
+  beatDetectedBpm: document.querySelector('#beat-detected-bpm'),
+  beatDetectedConfidence: document.querySelector('#beat-detected-confidence'),
+  beatDetectedLevel: document.querySelector('#beat-detected-level'),
+  beatDetectedOnset: document.querySelector('#beat-detected-onset'),
+  beatStatus: document.querySelector('#beat-status'),
+  beatNudgeButtons: [...document.querySelectorAll('[data-beat-nudge]')],
   avaPlay: document.querySelector('#ava-play'),
   avaStop: document.querySelector('#ava-stop'),
   avaLists: {
@@ -101,6 +129,12 @@ const defaultStage = {
   hemiLightIntensity: 1.7,
 };
 const rotationAxes = ['x', 'y', 'z'];
+const BEAT_MIN_BPM = 30;
+const BEAT_MAX_BPM = 300;
+const BEAT_MAX_OFFSET_MS = 250;
+const BEAT_TAP_RESET_MS = 2000;
+const BEAT_TAP_LIMIT = 12;
+const BEAT_DETECTED_MIN_CONFIDENCE = 0.2;
 let selectedBoneId = null;
 let selectedMoveId = null;
 let selectedAvaMove = null;
@@ -108,6 +142,23 @@ let selectedAvaKind = 'full';
 let playingAvaMove = null;
 let playingAvaKind = null;
 let avaMoves = [];
+const beatState = {
+  bpm: 120,
+  offsetMs: 0,
+  confidence: 0,
+  mode: 'Manual',
+  anchorTimeMs: performance.now(),
+  anchorBeat: 0,
+  tapTimes: [],
+  sampling: false,
+  sampleError: '',
+  detectedBpm: null,
+  detectedConfidence: 0,
+  detectedLevel: 0,
+  detectedOnset: false,
+  status: 'Ready for manual beat sync.',
+};
+const beatTracker = new BeatTracker();
 
 const viewport = new AvatarViewport(els.viewport, {
   onState: setState,
@@ -157,6 +208,9 @@ function activateTab(tabName) {
   }
   if (tabName === 'ava') {
     renderAvaList();
+  }
+  if (tabName === 'beats') {
+    renderBeatState();
   }
   requestAnimationFrame(() => viewport.resize());
 }
@@ -280,6 +334,206 @@ function applyAvaSpeed() {
   const speed = Number(els.avaSpeed.value);
   els.avaSpeedValue.textContent = `${speed.toFixed(1)}x`;
   viewport.setAvaTimeScale(speed);
+}
+
+function getBeatPeriodMs() {
+  return 60000 / beatState.bpm;
+}
+
+function getBeatFloat(nowMs = performance.now()) {
+  return ((nowMs - beatState.anchorTimeMs + beatState.offsetMs) / getBeatPeriodMs()) + beatState.anchorBeat;
+}
+
+function getBeatPhase(beatFloat) {
+  return beatFloat - Math.floor(beatFloat);
+}
+
+function getBeatCount(beatFloat) {
+  return positiveModulo(Math.floor(beatFloat), 4) + 1;
+}
+
+function setBeatBpm(value, status) {
+  const bpm = clampNumber(Number(value), BEAT_MIN_BPM, BEAT_MAX_BPM);
+  if (!Number.isFinite(bpm)) return;
+
+  const now = performance.now();
+  const beatFloat = getBeatFloat(now);
+  beatState.bpm = bpm;
+  beatState.anchorTimeMs = now + beatState.offsetMs - (beatFloat - beatState.anchorBeat) * getBeatPeriodMs();
+  beatState.mode = 'Manual';
+  if (status) beatState.status = status;
+  renderBeatState();
+}
+
+function setBeatNow(status, forceDownbeat = false) {
+  const now = performance.now();
+  const beatFloat = getBeatFloat(now);
+  beatState.anchorBeat = forceDownbeat ? 0 : Math.round(beatFloat);
+  beatState.anchorTimeMs = now + beatState.offsetMs;
+  beatState.confidence = Math.max(beatState.confidence, 0.75);
+  beatState.mode = 'Manual';
+  beatState.status = status;
+  renderBeatState();
+}
+
+function setBeatOffset(value, status) {
+  const offsetMs = clampNumber(Number(value), -BEAT_MAX_OFFSET_MS, BEAT_MAX_OFFSET_MS);
+  if (!Number.isFinite(offsetMs)) return;
+  beatState.offsetMs = offsetMs;
+  if (status) beatState.status = status;
+  renderBeatState();
+}
+
+function tapBeat() {
+  const now = performance.now();
+  const previousTap = beatState.tapTimes.at(-1);
+  if (previousTap && now - previousTap > BEAT_TAP_RESET_MS) {
+    beatState.tapTimes.length = 0;
+  }
+
+  const beatFloat = getBeatFloat(now);
+  beatState.tapTimes.push(now);
+  while (beatState.tapTimes.length > BEAT_TAP_LIMIT) beatState.tapTimes.shift();
+
+  if (beatState.tapTimes.length >= 2) {
+    const intervals = [];
+    for (let i = 1; i < beatState.tapTimes.length; i++) {
+      intervals.push(beatState.tapTimes[i] - beatState.tapTimes[i - 1]);
+    }
+    const averageMs = intervals.reduce((sum, value) => sum + value, 0) / intervals.length;
+    beatState.bpm = clampNumber(60000 / averageMs, BEAT_MIN_BPM, BEAT_MAX_BPM);
+    beatState.status = `Tap tempo from ${beatState.tapTimes.length} taps.`;
+  } else {
+    beatState.status = 'First tap recorded.';
+  }
+
+  beatState.anchorBeat = Math.round(beatFloat);
+  beatState.anchorTimeMs = now + beatState.offsetMs;
+  beatState.confidence = Math.min(1, Math.max(beatState.confidence, (beatState.tapTimes.length - 1) / 6));
+  beatState.mode = 'Tap';
+  renderBeatState();
+}
+
+function resetBeatSync() {
+  beatState.bpm = 120;
+  beatState.offsetMs = 0;
+  beatState.confidence = 0;
+  beatState.mode = 'Manual';
+  beatState.anchorTimeMs = performance.now();
+  beatState.anchorBeat = 0;
+  beatState.tapTimes.length = 0;
+  beatState.status = 'Sync reset.';
+  els.beatLock.checked = false;
+  renderBeatState();
+}
+
+async function startBeatSampling() {
+  if (beatState.sampling) return;
+
+  beatState.status = 'Requesting microphone access...';
+  beatState.sampleError = '';
+  renderBeatState();
+
+  try {
+    await beatTracker.start();
+    beatState.sampling = true;
+    beatState.mode = 'Sampling';
+    beatState.status = 'Sampling mic for BPM. Use Set 1 after applying detected BPM.';
+  } catch (error) {
+    beatState.sampling = false;
+    beatState.sampleError = error instanceof Error ? error.message : String(error);
+    beatState.status = `Mic sampling failed: ${beatState.sampleError}`;
+  }
+
+  renderBeatState();
+}
+
+function stopBeatSampling(status = 'Mic sampling stopped.') {
+  beatTracker.stop();
+  beatState.sampling = false;
+  beatState.detectedLevel = 0;
+  beatState.detectedOnset = false;
+  if (beatState.mode === 'Sampling') beatState.mode = 'Manual';
+  beatState.status = status;
+  renderBeatState();
+}
+
+function updateBeatSampling() {
+  if (!beatState.sampling) return;
+
+  const features = beatTracker.update();
+  const bpm = beatTracker.getBPM();
+  const confidence = beatTracker.getBPMConfidence();
+  beatState.detectedBpm = Number.isFinite(bpm) ? bpm : null;
+  beatState.detectedConfidence = Number.isFinite(confidence) ? confidence : 0;
+  beatState.detectedLevel = clampNumber(features.rmsSmooth || features.rms || 0, 0, 1);
+  beatState.detectedOnset = Boolean(features.onsetActive);
+
+  if (beatTracker.isLocked() && beatState.detectedBpm) {
+    beatState.status = `Mic locked near ${beatState.detectedBpm.toFixed(1)} BPM.`;
+  }
+}
+
+function useDetectedBeatBpm() {
+  if (!beatState.detectedBpm) return;
+
+  setBeatBpm(beatState.detectedBpm, `Using detected ${beatState.detectedBpm.toFixed(1)} BPM. Press Set Beat Now or Set 1 to align phase.`);
+  beatState.confidence = Math.max(beatState.confidence, beatState.detectedConfidence);
+  beatState.mode = 'Mic';
+  renderBeatState();
+}
+
+function setBeatStartTarget(beatsPerTarget, label) {
+  const beatFloat = getBeatFloat();
+  let targetBeat = Math.ceil(beatFloat / beatsPerTarget) * beatsPerTarget;
+  if (targetBeat <= beatFloat + 0.0001) targetBeat += beatsPerTarget;
+  const seconds = ((targetBeat - beatFloat) * getBeatPeriodMs()) / 1000;
+  beatState.status = `${label} target in ${seconds.toFixed(2)}s.`;
+  renderBeatState();
+}
+
+function renderBeatState() {
+  const beatFloat = getBeatFloat();
+  const phase = getBeatPhase(beatFloat);
+  const count = getBeatCount(beatFloat);
+  const offsetText = formatSignedMs(beatState.offsetMs);
+  const detectedReady = Boolean(
+    beatState.detectedBpm && beatState.detectedConfidence >= BEAT_DETECTED_MIN_CONFIDENCE,
+  );
+
+  if (document.activeElement !== els.beatBpm) {
+    els.beatBpm.value = beatState.bpm.toFixed(1);
+  }
+  els.beatBpmDisplay.textContent = beatState.bpm.toFixed(1);
+  els.beatMode.textContent = els.beatLock.checked ? `${beatState.mode} / Locked` : beatState.mode;
+  els.beatConfidence.textContent = `${Math.round(beatState.confidence * 100)}%`;
+  els.beatOffset.value = String(Math.round(beatState.offsetMs));
+  els.beatOffsetValue.textContent = offsetText;
+  els.beatOffsetDisplay.textContent = offsetText;
+  els.beatPhase.textContent = `${Math.round(phase * 100)}%`;
+  els.beatDetectedBpm.textContent = beatState.detectedBpm ? beatState.detectedBpm.toFixed(1) : '-';
+  els.beatDetectedConfidence.textContent = `${Math.round(beatState.detectedConfidence * 100)}%`;
+  els.beatDetectedLevel.textContent = `${Math.round(beatState.detectedLevel * 100)}%`;
+  els.beatDetectedOnset.textContent = beatState.detectedOnset ? 'Yes' : 'No';
+  els.beatSampleMic.disabled = beatState.sampling;
+  els.beatStopSampling.disabled = !beatState.sampling;
+  els.beatUseDetected.disabled = !detectedReady;
+  els.beatStatus.textContent = beatState.status;
+
+  els.beatCountSteps.forEach((step, index) => {
+    step.classList.toggle('is-active', index + 1 === count);
+  });
+}
+
+function tickBeatState() {
+  updateBeatSampling();
+  renderBeatState();
+  requestAnimationFrame(tickBeatState);
+}
+
+function formatSignedMs(value) {
+  const rounded = Math.round(value);
+  return `${rounded >= 0 ? '+' : ''}${rounded}ms`;
 }
 
 function updateMoveStatus(status) {
@@ -534,6 +788,14 @@ function formatNumber(value) {
   return Number(value).toFixed(3);
 }
 
+function clampNumber(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function positiveModulo(value, size) {
+  return ((value % size) + size) % size;
+}
+
 els.tabButtons.forEach((button) => {
   button.addEventListener('click', () => activateTab(button.dataset.tab));
 });
@@ -561,6 +823,33 @@ els.moveSpeed.addEventListener('input', applyMoveSpeed);
 els.moveHelpers.addEventListener('change', applyMoveOptions);
 els.moveFootLock.addEventListener('change', applyMoveOptions);
 els.moveBalance.addEventListener('change', applyMoveOptions);
+els.beatTap.addEventListener('click', tapBeat);
+els.beatSetBeat.addEventListener('click', () => setBeatNow('Beat aligned to now.'));
+els.beatSetDownbeat.addEventListener('click', () => setBeatNow('Downbeat set to now.', true));
+els.beatBpm.addEventListener('input', () => {
+  const bpm = Number(els.beatBpm.value);
+  setBeatBpm(bpm, `Manual BPM set to ${bpm.toFixed(1)}.`);
+  beatState.confidence = Math.max(beatState.confidence, 0.6);
+});
+els.beatHalf.addEventListener('click', () => setBeatBpm(beatState.bpm / 2, 'BPM halved.'));
+els.beatDouble.addEventListener('click', () => setBeatBpm(beatState.bpm * 2, 'BPM doubled.'));
+els.beatReset.addEventListener('click', resetBeatSync);
+els.beatOffset.addEventListener('input', () => setBeatOffset(els.beatOffset.value, 'Offset adjusted.'));
+els.beatLock.addEventListener('change', () => {
+  beatState.status = els.beatLock.checked ? 'BPM locked.' : 'BPM unlocked.';
+  renderBeatState();
+});
+els.beatStartNextBeat.addEventListener('click', () => setBeatStartTarget(1, 'Next beat'));
+els.beatStartNextBar.addEventListener('click', () => setBeatStartTarget(4, 'Next bar'));
+els.beatSampleMic.addEventListener('click', startBeatSampling);
+els.beatStopSampling.addEventListener('click', () => stopBeatSampling());
+els.beatUseDetected.addEventListener('click', useDetectedBeatBpm);
+els.beatNudgeButtons.forEach((button) => {
+  button.addEventListener('click', () => {
+    const deltaMs = Number(button.dataset.beatNudge);
+    setBeatOffset(beatState.offsetMs + deltaMs, `Offset nudged ${formatSignedMs(deltaMs)}.`);
+  });
+});
 els.avaPlay.addEventListener('click', playSelectedAva);
 els.avaStop.addEventListener('click', stopAvaPlayback);
 els.avaSpeed.addEventListener('input', applyAvaSpeed);
@@ -590,6 +879,8 @@ renderMoveList();
 applyMoveSpeed();
 applyMoveOptions();
 applyAvaSpeed();
+renderBeatState();
+requestAnimationFrame(tickBeatState);
 updateMoveStatus(viewport.getMoveStatus());
 viewport.resize();
 viewport.start();

@@ -17,6 +17,7 @@
           <button id="tab-viewer" class="tab-button is-active" type="button" role="tab" aria-selected="true" aria-controls="panel-viewer" data-tab="viewer">Viewer</button>
           <button id="tab-stage" class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="panel-stage" data-tab="stage">Stage</button>
           <button id="tab-moves" class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="panel-moves" data-tab="moves">Moves</button>
+          <button id="tab-beats" class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="panel-beats" data-tab="beats">Beats</button>
           <button id="tab-ava" class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="panel-ava" data-tab="ava">AVA</button>
           <button id="tab-rig" class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="panel-rig" data-tab="rig">Rig</button>
         </nav>
@@ -165,6 +166,105 @@
               <dd id="move-correction">-</dd>
             </div>
           </dl>
+        </section>
+
+        <section id="panel-beats" class="tab-panel" role="tabpanel" aria-labelledby="tab-beats" data-panel="beats" hidden>
+          <div class="beat-count" aria-label="Beat count">
+            <span id="beat-count-1" class="beat-count-step is-active">1</span>
+            <span id="beat-count-2" class="beat-count-step">2</span>
+            <span id="beat-count-3" class="beat-count-step">3</span>
+            <span id="beat-count-4" class="beat-count-step">4</span>
+          </div>
+
+          <dl class="beat-meta" aria-label="Beat sync details">
+            <div>
+              <dt>BPM</dt>
+              <dd id="beat-bpm-display">120.0</dd>
+            </div>
+            <div>
+              <dt>Mode</dt>
+              <dd id="beat-mode">Manual</dd>
+            </div>
+            <div>
+              <dt>Confidence</dt>
+              <dd id="beat-confidence">0%</dd>
+            </div>
+            <div>
+              <dt>Offset</dt>
+              <dd id="beat-offset-display">+0ms</dd>
+            </div>
+            <div>
+              <dt>Phase</dt>
+              <dd id="beat-phase">0%</dd>
+            </div>
+          </dl>
+
+          <div class="beat-sample-panel" aria-label="Microphone beat sampling">
+            <div class="beat-toolbar beat-toolbar-compact">
+              <button id="beat-sample-mic" type="button">Sample Mic</button>
+              <button id="beat-stop-sampling" type="button" disabled>Stop</button>
+              <button id="beat-use-detected" type="button" disabled>Use Detected BPM</button>
+            </div>
+            <dl class="beat-meta beat-detected-meta" aria-label="Detected beat details">
+              <div>
+                <dt>Detected</dt>
+                <dd id="beat-detected-bpm">-</dd>
+              </div>
+              <div>
+                <dt>Mic Conf</dt>
+                <dd id="beat-detected-confidence">0%</dd>
+              </div>
+              <div>
+                <dt>Level</dt>
+                <dd id="beat-detected-level">0%</dd>
+              </div>
+              <div>
+                <dt>Onset</dt>
+                <dd id="beat-detected-onset">No</dd>
+              </div>
+            </dl>
+          </div>
+
+          <div class="beat-toolbar">
+            <button id="beat-tap" type="button">Tap Tempo</button>
+            <button id="beat-set-beat" type="button">Set Beat Now</button>
+            <button id="beat-set-downbeat" type="button">Set 1</button>
+          </div>
+
+          <label class="field">
+            <span>BPM</span>
+            <input id="beat-bpm" type="number" min="30" max="300" step="0.1" value="120" />
+          </label>
+
+          <div class="beat-toolbar beat-toolbar-compact" aria-label="Tempo multiples">
+            <button id="beat-half" type="button">Half</button>
+            <button id="beat-double" type="button">Double</button>
+            <button id="beat-reset" type="button">Reset Sync</button>
+          </div>
+
+          <div class="beat-nudge-grid" aria-label="Beat offset nudges">
+            <button type="button" data-beat-nudge="-50">-50ms</button>
+            <button type="button" data-beat-nudge="-10">-10ms</button>
+            <button type="button" data-beat-nudge="10">+10ms</button>
+            <button type="button" data-beat-nudge="50">+50ms</button>
+          </div>
+
+          <label class="field">
+            <span>Offset <output id="beat-offset-value" for="beat-offset">+0ms</output></span>
+            <input id="beat-offset" type="range" min="-250" max="250" step="1" value="0" />
+          </label>
+
+          <label class="toggle toggle-row">
+            <input id="beat-lock" type="checkbox" />
+            <span>Lock BPM</span>
+          </label>
+
+          <div class="beat-toolbar">
+            <button id="beat-start-next-beat" type="button">Start Next Beat</button>
+            <button id="beat-start-next-bar" type="button">Start Next Bar</button>
+          </div>
+
+          <p id="beat-status" class="beat-status">Ready for manual beat sync.</p>
         </section>
 
         <section id="panel-ava" class="tab-panel" role="tabpanel" aria-labelledby="tab-ava" data-panel="ava" hidden>
