@@ -33,7 +33,7 @@ export class AvatarViewport {
     };
     this.avaMoves = [];
     this.movePlayer = null;
-    this.useAvak = true;
+    this.useAvak = false;
   }
 
   setUseAvak(enabled) {
