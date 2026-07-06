@@ -62,6 +62,7 @@ const els = {
   moveSpeedValue: document.querySelector('#move-speed-value'),
   moveHelpers: document.querySelector('#move-helpers'),
   moveFootLock: document.querySelector('#move-foot-lock'),
+  moveBalance: document.querySelector('#move-balance'),
   moveCount: document.querySelector('#move-count'),
   moveList: document.querySelector('#move-list'),
   moveActive: document.querySelector('#move-active'),
@@ -271,6 +272,7 @@ function applyMoveOptions() {
   viewport.setMoveOptions({
     showHelpers: els.moveHelpers.checked,
     footLock: els.moveFootLock.checked,
+    balance: els.moveBalance.checked,
   });
 }
 
@@ -558,6 +560,7 @@ els.moveReset.addEventListener('click', resetMovePlayback);
 els.moveSpeed.addEventListener('input', applyMoveSpeed);
 els.moveHelpers.addEventListener('change', applyMoveOptions);
 els.moveFootLock.addEventListener('change', applyMoveOptions);
+els.moveBalance.addEventListener('change', applyMoveOptions);
 els.avaPlay.addEventListener('click', playSelectedAva);
 els.avaStop.addEventListener('click', stopAvaPlayback);
 els.avaSpeed.addEventListener('input', applyAvaSpeed);

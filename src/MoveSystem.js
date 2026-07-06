@@ -5,6 +5,7 @@ import {
   getNormalizedLimbChain,
   solveLimbIK,
 } from './ik.js';
+import { SimpleBalanceSolver } from './SimpleBalanceSolver.js';
 import { MOVE_PRESETS, getMovePreset } from './movePresets.js';
 import {
   applyLocalRotationOffset,
@@ -45,7 +46,13 @@ export class MoveSystem {
       speed: 1,
       showHelpers: true,
       footLock: true,
+      balance: false,
     };
+    this.balanceSolver = new SimpleBalanceSolver({
+      iterations: 2,
+      maxCorrection: 0.05,
+      maxLeanAngle: 0.06,
+    });
   }
 
   getPresets() {
@@ -109,6 +116,10 @@ export class MoveSystem {
     }
     if (typeof options.footLock === 'boolean') {
       this.move.footLock = options.footLock;
+      this.moveFootPlants.clear();
+    }
+    if (typeof options.balance === 'boolean') {
+      this.move.balance = options.balance;
       this.moveFootPlants.clear();
     }
     this.updateHelpersVisibility();
@@ -292,15 +303,23 @@ export class MoveSystem {
       anchor: this.getPlantWorldAnchor(plant),
     }));
     if (this.move.footLock && plantedFeet.length > 0) {
-      const result = applyFootPlantHipOffset({
-        hips: rig.bones.hips,
-        plantedFeet,
-        solve,
-        iterations: 2,
-        maxCorrection: rig.metrics.scale * 0.05,
-        axes: FOOT_PLANT_AXES,
-      });
-      correction = result.correction;
+      if (this.move.balance) {
+        this.balanceSolver.maxCorrection = rig.metrics.scale * 0.05;
+        const result = this.balanceSolver.solve(this.currentVrm, plantedFeet, solve);
+        correction = result.correction;
+      } else {
+        const result = applyFootPlantHipOffset({
+          hips: rig.bones.hips,
+          plantedFeet,
+          solve,
+          iterations: 2,
+          maxCorrection: rig.metrics.scale * 0.05,
+          axes: FOOT_PLANT_AXES,
+        });
+        correction = result.correction;
+      }
+    } else if (this.move.balance) {
+      this.balanceSolver.solve(this.currentVrm, [], solve);
     }
 
     this.updateHelpers(helperPoints);
