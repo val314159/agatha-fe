@@ -62,11 +62,10 @@ export class MovePlayer {
 
   stop() {
     if (this.action) {
-      this.action.stop();
+      this.action.paused = true;
       this.action = null;
     }
     if (this.mixer) {
-      this.mixer.stopAllAction();
       this.mixer = null;
     }
     this.clip = null;

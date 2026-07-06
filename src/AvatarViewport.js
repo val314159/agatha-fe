@@ -359,6 +359,10 @@ export class AvatarViewport {
     if (!move) return false;
 
     this.moveSystem.setPlaying(false);
+    this.stopAvaMove();
+
+    this.currentVrm.humanoid?.resetNormalizedPose?.();
+    this.currentVrm.update?.(0);
 
     const avarBaker = new AvaToAvar(this.currentVrm, { modelPath: this.currentAvatarPath || 'avatar' });
     const avar = avarBaker.bake(move.ava);
