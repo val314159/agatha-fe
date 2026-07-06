@@ -27,6 +27,7 @@ const els = {
   loadUrl: document.querySelector('#load-url'),
   fileInput: document.querySelector('#avatar-file'),
   resetCamera: document.querySelector('#reset-camera'),
+  resetPose: document.querySelector('#reset-pose'),
   autoRotate: document.querySelector('#auto-rotate'),
   backgroundColor: document.querySelector('#background-color'),
   gridVisible: document.querySelector('#grid-visible'),
@@ -518,6 +519,7 @@ els.urlInput.addEventListener('keydown', (event) => {
 });
 els.fileInput.addEventListener('change', (event) => loadLocalFile(event.target.files?.[0]));
 els.resetCamera.addEventListener('click', () => viewport.resetCamera());
+els.resetPose.addEventListener('click', () => viewport.resetPose());
 els.autoRotate.addEventListener('change', () => viewport.setAutoRotate(els.autoRotate.checked));
 els.backgroundColor.addEventListener('input', applyStageFromForm);
 els.gridVisible.addEventListener('change', applyStageFromForm);

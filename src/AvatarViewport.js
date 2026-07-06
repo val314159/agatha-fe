@@ -116,6 +116,17 @@ export class AvatarViewport {
     }
   }
 
+  resetPose() {
+    this.stopAvaMove();
+    this.stopFbxAnimation();
+    this.moveSystem.setPlaying(false);
+    this.moveSystem.reset();
+    if (this.currentVrm) {
+      this.currentVrm.humanoid?.resetNormalizedPose?.();
+      this.currentVrm.update?.(0);
+    }
+  }
+
   async loadAvatar(path, label = path, options = {}) {
     const { objectUrl = null } = options;
     this.callbacks.onState?.('Loading', 'loading');
