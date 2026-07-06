@@ -3,6 +3,19 @@ import * as THREE from 'three';
 const EPSILON = 1e-5;
 const DEFAULT_PLANT_AXES = Object.freeze({ x: true, y: false, z: true });
 
+const _v1 = new THREE.Vector3();
+const _v2 = new THREE.Vector3();
+const _v3 = new THREE.Vector3();
+const _v4 = new THREE.Vector3();
+const _v5 = new THREE.Vector3();
+const _v6 = new THREE.Vector3();
+const _v7 = new THREE.Vector3();
+const _v8 = new THREE.Vector3();
+const _v9 = new THREE.Vector3();
+const _q1 = new THREE.Quaternion();
+const _q2 = new THREE.Quaternion();
+const _q3 = new THREE.Quaternion();
+
 export const VRM_LIMB_CHAINS = Object.freeze({
   leftArm: ['leftUpperArm', 'leftLowerArm', 'leftHand'],
   rightArm: ['rightUpperArm', 'rightLowerArm', 'rightHand'],
@@ -58,12 +71,12 @@ export function solveTwoBoneIK({
   assertObject3D(mid, 'mid');
   assertObject3D(end, 'end');
 
-  const rootPos = new THREE.Vector3();
-  const midPos = new THREE.Vector3();
-  const endPos = new THREE.Vector3();
-  const targetPos = new THREE.Vector3();
+  const rootPos = _v1;
+  const midPos = _v2;
+  const endPos = _v3;
+  const targetPos = _v4;
 
-  root.updateWorldMatrix(true, true);
+  root.updateWorldMatrix(true, false);
   root.getWorldPosition(rootPos);
   mid.getWorldPosition(midPos);
   end.getWorldPosition(endPos);
@@ -81,7 +94,7 @@ export function solveTwoBoneIK({
     };
   }
 
-  const targetDirection = new THREE.Vector3().subVectors(targetPos, rootPos);
+  const targetDirection = _v5.subVectors(targetPos, rootPos);
   const requestedDistance = targetDirection.length();
   if (requestedDistance < EPSILON) {
     targetDirection.subVectors(endPos, rootPos);
@@ -105,33 +118,35 @@ export function solveTwoBoneIK({
     targetDirection,
     pole,
   });
+  // resolvePoleDirection returns a fresh vector, use _v6
+
 
   const alongTarget =
     (upperLength * upperLength - lowerLength * lowerLength + solveDistance * solveDistance) /
     (2 * solveDistance);
   const bendHeight = Math.sqrt(Math.max(upperLength * upperLength - alongTarget * alongTarget, 0));
 
-  const desiredEndPosition = new THREE.Vector3()
+  const desiredEndPosition = _v6
     .copy(targetDirection)
     .multiplyScalar(solveDistance)
     .add(rootPos);
-  const desiredMidPosition = new THREE.Vector3()
+  const desiredMidPosition = _v7
     .copy(targetDirection)
     .multiplyScalar(alongTarget)
     .addScaledVector(poleDirection, bendHeight)
     .add(rootPos);
 
   rotateObjectToPointAt(root, midPos, desiredMidPosition);
-  root.updateWorldMatrix(true, true);
+  root.updateWorldMatrix(true, false);
 
   mid.getWorldPosition(midPos);
   end.getWorldPosition(endPos);
   rotateObjectToPointAt(mid, endPos, desiredEndPosition);
-  root.updateWorldMatrix(true, true);
+  root.updateWorldMatrix(true, false);
 
   if (endQuaternion) {
-    const eq = new THREE.Quaternion();
-    setWorldQuaternion(end, readWorldQuaternion(endQuaternion, eq));
+    readWorldQuaternion(endQuaternion, _q1);
+    setWorldQuaternion(end, _q1);
   }
 
   return {
@@ -175,7 +190,7 @@ export function applyFootPlantHipOffset({
   for (let i = 0; i < iterations; i += 1) {
     solve?.();
 
-    const weightedSlip = new THREE.Vector3();
+    const weightedSlip = _v1.set(0, 0, 0);
     let totalWeight = 0;
     slips.length = 0;
 
@@ -183,9 +198,9 @@ export function applyFootPlantHipOffset({
       const foot = plant.foot || plant.end || plant.object;
       if (!foot) return;
 
-      const anchor = readWorldPosition(plant.anchor || plant.target, new THREE.Vector3());
-      const footPosition = getWorldPosition(foot, new THREE.Vector3());
-      const slip = footPosition.sub(anchor);
+      const anchor = readWorldPosition(plant.anchor || plant.target, _v2);
+      const footPosition = getWorldPosition(foot, _v3);
+      const slip = _v4.copy(footPosition).sub(anchor);
       maskAxes(slip, plant.axes || axes);
 
       const weight = plant.weight ?? 1;
@@ -239,24 +254,27 @@ export function derivePoleDirection(rootPosition, endPosition, jointPosition, ta
 export function makePolePoint(rootPosition, poleDirection, distance, target = new THREE.Vector3()) {
   const rootPos = readWorldPosition(rootPosition, new THREE.Vector3());
   const direction = readWorldDirection(poleDirection, new THREE.Vector3());
-  return target.copy(rootPos).addScaledVector(direction, distance);
+  if (direction.lengthSq() < EPSILON * EPSILON) {
+    return target.copy(rootPos);
+  }
+  return target.copy(rootPos).addScaledVector(direction.normalize(), distance);
 }
 
 export function applyWorldOffset(object, worldOffset) {
   assertObject3D(object, 'object');
-  const offset = readWorldDirection(worldOffset, new THREE.Vector3());
+  const offset = readWorldDirection(worldOffset, _v1);
   if (offset.lengthSq() < EPSILON * EPSILON) return object;
 
   if (!object.parent) {
     object.position.add(offset);
-    object.updateWorldMatrix(true, true);
+    object.updateWorldMatrix(true, false);
     return object;
   }
 
-  const objWorldPos = new THREE.Vector3();
-  const offsetWorld = new THREE.Vector3();
-  const currentLocal = new THREE.Vector3();
-  const targetLocal = new THREE.Vector3();
+  const objWorldPos = _v2;
+  const offsetWorld = _v3;
+  const currentLocal = _v4;
+  const targetLocal = _v5;
 
   object.updateWorldMatrix(true, false);
   object.getWorldPosition(objWorldPos);
@@ -269,25 +287,25 @@ export function applyWorldOffset(object, worldOffset) {
   object.parent.worldToLocal(targetLocal);
 
   object.position.add(targetLocal.sub(currentLocal));
-  object.updateWorldMatrix(true, true);
+  object.updateWorldMatrix(true, false);
   return object;
 }
 
 export function setWorldQuaternion(object, worldQuaternion) {
   assertObject3D(object, 'object');
-  const targetWorldQuaternion = worldQuaternion.clone();
+  const desiredWorldQuaternion = _q3.copy(worldQuaternion);
 
   if (!object.parent) {
-    object.quaternion.copy(targetWorldQuaternion);
-    object.updateWorldMatrix(true, true);
+    object.quaternion.copy(desiredWorldQuaternion);
+    object.updateWorldMatrix(true, false);
     return object;
   }
 
-  const parentWorldQuat = new THREE.Quaternion();
   object.parent.updateWorldMatrix(true, false);
-  object.parent.getWorldQuaternion(parentWorldQuat);
-  object.quaternion.copy(parentWorldQuat.invert().multiply(targetWorldQuaternion));
-  object.updateWorldMatrix(true, true);
+  object.parent.getWorldQuaternion(_q2);
+  _q2.invert().multiply(desiredWorldQuaternion);
+  object.quaternion.copy(_q2);
+  object.updateWorldMatrix(true, false);
   return object;
 }
 
@@ -300,10 +318,10 @@ function getNormalizedBoneNode(humanoid, name) {
 }
 
 function rotateObjectToPointAt(object, currentChildPosition, targetChildPosition) {
-  const objectPos = new THREE.Vector3();
+  const objectPos = _v1.copy(currentChildPosition); // borrow _v1 temporarily
   object.getWorldPosition(objectPos);
-  const currentDirection = new THREE.Vector3().subVectors(currentChildPosition, objectPos);
-  const targetDirection = new THREE.Vector3().subVectors(targetChildPosition, objectPos);
+  const currentDirection = _v2.subVectors(currentChildPosition, objectPos);
+  const targetDirection = _v3.subVectors(targetChildPosition, objectPos);
 
   if (currentDirection.lengthSq() < EPSILON * EPSILON) return false;
   if (targetDirection.lengthSq() < EPSILON * EPSILON) return false;
@@ -311,11 +329,10 @@ function rotateObjectToPointAt(object, currentChildPosition, targetChildPosition
   currentDirection.normalize();
   targetDirection.normalize();
 
-  const deltaQuat = new THREE.Quaternion().setFromUnitVectors(currentDirection, targetDirection);
-  const worldQuat = new THREE.Quaternion();
-  object.getWorldQuaternion(worldQuat);
-  worldQuat.premultiply(deltaQuat);
-  setWorldQuaternion(object, worldQuat);
+  _q1.setFromUnitVectors(currentDirection, targetDirection);
+  object.getWorldQuaternion(_q2);
+  _q2.premultiply(_q1);
+  setWorldQuaternion(object, _q2);
   return true;
 }
 
@@ -325,7 +342,7 @@ function resolvePoleDirection({
   targetDirection,
   pole,
 }) {
-  const polePos = new THREE.Vector3();
+  const polePos = _v8;
 
   if (pole) {
     readWorldPosition(pole, polePos).sub(rootPosition);
@@ -350,9 +367,12 @@ function resolvePoleDirection({
 }
 
 function makeFallbackPoleDirection(direction) {
-  const fallback = Math.abs(direction.y) < 0.9
-    ? new THREE.Vector3(0, 1, 0)
-    : new THREE.Vector3(1, 0, 0);
+  const fallback = _v9;
+  if (Math.abs(direction.y) < 0.9) {
+    fallback.set(0, 1, 0);
+  } else {
+    fallback.set(1, 0, 0);
+  }
 
   fallback.addScaledVector(direction, -fallback.dot(direction));
   return fallback.normalize();
