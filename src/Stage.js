@@ -7,7 +7,7 @@ const DEFAULT_STAGE = {
   gridSize: 4,
   keyLightIntensity: 2.3,
   hemiLightIntensity: 1.7,
-  autoRotate: true,
+  autoRotate: false,
 };
 
 export class Stage {

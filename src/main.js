@@ -1,5 +1,6 @@
 import './styles.css';
 import { AvatarViewport } from './AvatarViewport.js';
+import { splitByRegion } from './AvaToAvar.js';
 
 const presets = new Map([
   ['/models/avaAvatar.vrm', { name: 'Ava Avatar' }],
@@ -27,6 +28,7 @@ const els = {
   loadUrl: document.querySelector('#load-url'),
   fileInput: document.querySelector('#avatar-file'),
   resetCamera: document.querySelector('#reset-camera'),
+  resetPose: document.querySelector('#reset-pose'),
   autoRotate: document.querySelector('#auto-rotate'),
   backgroundColor: document.querySelector('#background-color'),
   gridVisible: document.querySelector('#grid-visible'),
@@ -66,15 +68,24 @@ const els = {
   movePhase: document.querySelector('#move-phase'),
   movePlanted: document.querySelector('#move-planted'),
   moveCorrection: document.querySelector('#move-correction'),
-  fbxCount: document.querySelector('#fbx-count'),
-  fbxList: document.querySelector('#fbx-list'),
-  fbxInspect: document.querySelector('#fbx-inspect'),
-  fbxActive: document.querySelector('#fbx-active'),
-  fbxClips: document.querySelector('#fbx-clips'),
-  fbxDuration: document.querySelector('#fbx-duration'),
-  fbxTracks: document.querySelector('#fbx-tracks'),
-  fbxBones: document.querySelector('#fbx-bones'),
-  fbxNodes: document.querySelector('#fbx-nodes'),
+  avaPlay: document.querySelector('#ava-play'),
+  avaStop: document.querySelector('#ava-stop'),
+  avaLists: {
+    full: document.querySelector('#ava-list-full'),
+    upper: document.querySelector('#ava-list-upper'),
+    lower: document.querySelector('#ava-list-lower'),
+  },
+  avaCounts: {
+    full: document.querySelector('#ava-count-full'),
+    upper: document.querySelector('#ava-count-upper'),
+    lower: document.querySelector('#ava-count-lower'),
+  },
+  avaActive: document.querySelector('#ava-active'),
+  avaDuration: document.querySelector('#ava-duration'),
+  avaTracks: document.querySelector('#ava-tracks'),
+  avaSpeed: document.querySelector('#ava-speed'),
+  avaSpeedValue: document.querySelector('#ava-speed-value'),
+  avaUseAvak: document.querySelector('#ava-use-avak'),
   metaSource: document.querySelector('#meta-source'),
   metaFormat: document.querySelector('#meta-format'),
   metaMeshes: document.querySelector('#meta-meshes'),
@@ -91,13 +102,18 @@ const defaultStage = {
 const rotationAxes = ['x', 'y', 'z'];
 let selectedBoneId = null;
 let selectedMoveId = null;
-let selectedFbxPath = fbxAnimations[0]?.path || null;
+let selectedAvaMove = null;
+let selectedAvaKind = 'full';
+let playingAvaMove = null;
+let playingAvaKind = null;
+let avaMoves = [];
 
 const viewport = new AvatarViewport(els.viewport, {
   onState: setState,
   onProgress: setProgress,
   onModelLoaded: updateMetadata,
   onMoveStatus: updateMoveStatus,
+  onAvaStatus: updateAvaStatus,
 });
 const movePresets = viewport.getMovePresets();
 selectedMoveId = movePresets[0]?.id || null;
@@ -138,29 +154,44 @@ function activateTab(tabName) {
     renderMoveList();
     updateMoveStatus(viewport.getMoveStatus());
   }
-  if (tabName === 'fbx') {
-    renderFbxList();
+  if (tabName === 'ava') {
+    renderAvaList();
   }
   requestAnimationFrame(() => viewport.resize());
 }
 
-function loadSelectedAvatar() {
+async function loadSelectedAvatar() {
   const path = els.select.value;
   const preset = presets.get(path);
   els.urlInput.value = path;
-  viewport.loadAvatar(path, preset?.name || path);
+  await viewport.loadAvatar(path, preset?.name || path);
+  await reloadAvaMoves();
 }
 
-function loadCustomUrl() {
+async function loadCustomUrl() {
   const path = els.urlInput.value.trim();
   if (!path) return;
-  viewport.loadAvatar(path, path);
+  await viewport.loadAvatar(path, path);
+  await reloadAvaMoves();
 }
 
-function loadLocalFile(file) {
+async function loadLocalFile(file) {
   if (!file) return;
   els.urlInput.value = file.name;
-  viewport.loadLocalFile(file);
+  await viewport.loadLocalFile(file);
+  await reloadAvaMoves();
+}
+
+async function reloadAvaMoves() {
+  viewport.stopAvaMove();
+  playingAvaMove = null;
+  playingAvaKind = null;
+  selectedAvaMove = null;
+  selectedAvaKind = 'full';
+  avaMoves = await viewport.loadAvaMoves(fbxAnimations, setProgress);
+  renderAvaList();
+  updateAvaToolbar();
+  setProgress('');
 }
 
 function getStageFormValues() {
@@ -243,6 +274,12 @@ function applyMoveOptions() {
   });
 }
 
+function applyAvaSpeed() {
+  const speed = Number(els.avaSpeed.value);
+  els.avaSpeedValue.textContent = `${speed.toFixed(1)}x`;
+  viewport.setAvaTimeScale(speed);
+}
+
 function updateMoveStatus(status) {
   const ready = Boolean(status.ready);
 
@@ -259,72 +296,103 @@ function updateMoveStatus(status) {
     : '-';
 }
 
-function renderFbxList() {
-  els.fbxCount.textContent = String(fbxAnimations.length);
-  els.fbxList.textContent = '';
+const AVA_KINDS = ['full', 'upper', 'lower'];
 
-  fbxAnimations.forEach((animation) => {
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.className = 'fbx-item';
-    button.dataset.fbxPath = animation.path;
-    button.classList.toggle('is-selected', animation.path === selectedFbxPath);
-    button.textContent = animation.name;
-    button.addEventListener('click', () => selectFbxAnimation(animation.path));
-    els.fbxList.appendChild(button);
-  });
+function renderAvaList() {
+  const moves = viewport.getAvaMoves();
+  for (const kind of AVA_KINDS) {
+    const list = els.avaLists[kind];
+    const count = els.avaCounts[kind];
+    list.textContent = '';
+    count.textContent = String(moves.length);
 
-  els.fbxInspect.disabled = !selectedFbxPath;
+    moves.forEach((move) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'fbx-item';
+      button.dataset.avaName = move.name;
+      button.dataset.avaKind = kind;
+      const isSelected = move.name === selectedAvaMove && kind === selectedAvaKind;
+      const isPlaying = move.name === playingAvaMove && kind === playingAvaKind;
+      button.classList.toggle('is-selected', isSelected);
+      button.classList.toggle('is-playing', isPlaying);
+      button.textContent = move.name;
+      button.addEventListener('click', () => selectAvaMove(move.name, kind));
+      list.appendChild(button);
+    });
+  }
+
+  updateAvaToolbar();
+  updateAvaMetadata();
 }
 
-function selectFbxAnimation(path) {
-  selectedFbxPath = path;
-  renderFbxList();
-  updateFbxMetadata(null);
+function selectAvaMove(name, kind) {
+  selectedAvaMove = name;
+  selectedAvaKind = kind;
+  renderAvaList();
+  updateAvaToolbar();
+  updateAvaMetadata();
 }
 
-async function inspectSelectedFbx() {
-  const animation = fbxAnimations.find((item) => item.path === selectedFbxPath);
-  if (!animation) return;
+function updateAvaToolbar() {
+  const selected = Boolean(selectedAvaMove);
+  const playing = Boolean(playingAvaMove);
+  const selectedIsPlaying = selectedAvaMove === playingAvaMove && selectedAvaKind === playingAvaKind;
 
-  els.fbxInspect.disabled = true;
-  els.fbxInspect.textContent = 'Inspecting';
-  updateFbxMetadata({ source: animation.name, loading: true });
+  els.avaPlay.disabled = !selected || selectedIsPlaying;
+  els.avaPlay.textContent = selectedIsPlaying ? 'Playing' : 'Play';
+  els.avaStop.disabled = !playing;
+}
+
+function playSelectedAva() {
+  if (!selectedAvaMove) return;
+
+  els.avaPlay.disabled = true;
+  els.avaPlay.textContent = 'Baking';
 
   try {
-    const metadata = await viewport.inspectFbxAnimation(animation.path, animation.name);
-    updateFbxMetadata(metadata);
+    viewport.playAvaMove(selectedAvaMove, selectedAvaKind);
+    playingAvaMove = selectedAvaMove;
+    playingAvaKind = selectedAvaKind;
+    els.autoRotate.checked = false;
+    viewport.setAutoRotate(false);
   } catch (error) {
     console.error(error);
     setProgress(error instanceof Error ? error.message : String(error));
-    updateFbxMetadata({ source: animation.name, error: true });
+    playingAvaMove = null;
+    playingAvaKind = null;
   } finally {
-    els.fbxInspect.disabled = false;
-    els.fbxInspect.textContent = 'Inspect';
+    renderAvaList();
   }
 }
 
-function updateFbxMetadata(metadata) {
-  const selected = fbxAnimations.find((item) => item.path === selectedFbxPath);
-  const hasStats = Boolean(metadata && !metadata.loading && !metadata.error);
-
-  els.fbxActive.textContent = metadata?.source || selected?.name || '-';
-  els.fbxClips.textContent = metadata?.loading
-    ? 'Loading'
-    : metadata?.error
-      ? 'Failed'
-      : hasStats
-        ? formatFbxClips(metadata.clips)
-        : '-';
-  els.fbxDuration.textContent = hasStats && metadata.duration ? `${metadata.duration.toFixed(2)}s` : '-';
-  els.fbxTracks.textContent = hasStats ? metadata.tracks.toLocaleString() : '-';
-  els.fbxBones.textContent = hasStats ? metadata.bones.toLocaleString() : '-';
-  els.fbxNodes.textContent = hasStats ? metadata.nodes.toLocaleString() : '-';
+function stopAvaPlayback() {
+  viewport.stopAvaMove();
+  playingAvaMove = null;
+  playingAvaKind = null;
+  renderAvaList();
 }
 
-function formatFbxClips(clips = []) {
-  if (!clips.length) return '0';
-  return clips.map((clip) => `${clip.name} (${clip.tracks})`).join(', ');
+function updateAvaMetadata() {
+  const move = viewport.getAvaMoves().find((m) => m.name === selectedAvaMove);
+  if (!move) {
+    els.avaActive.textContent = '-';
+    els.avaDuration.textContent = '-';
+    els.avaTracks.textContent = '-';
+    return;
+  }
+
+  els.avaActive.textContent = `${move.name} (${selectedAvaKind})`;
+  els.avaDuration.textContent = move.ava.duration ? `${move.ava.duration.toFixed(2)}s` : '-';
+  els.avaTracks.textContent = move.ava.tracks?.length ? String(move.ava.tracks.length) : '-';
+}
+
+function updateAvaStatus(status) {
+  const statusTime = document.querySelector('#ava-status-time');
+  if (statusTime) {
+    const pct = status.duration > 0 ? Math.round((status.time / status.duration) * 100) : 0;
+    statusTime.textContent = `${status.time.toFixed(2)}s / ${status.duration.toFixed(2)}s (${pct}%)`;
+  }
 }
 
 function renderRigList() {
@@ -477,6 +545,7 @@ els.urlInput.addEventListener('keydown', (event) => {
 });
 els.fileInput.addEventListener('change', (event) => loadLocalFile(event.target.files?.[0]));
 els.resetCamera.addEventListener('click', () => viewport.resetCamera());
+els.resetPose.addEventListener('click', () => viewport.resetPose());
 els.autoRotate.addEventListener('change', () => viewport.setAutoRotate(els.autoRotate.checked));
 els.backgroundColor.addEventListener('input', applyStageFromForm);
 els.gridVisible.addEventListener('change', applyStageFromForm);
@@ -489,7 +558,15 @@ els.moveReset.addEventListener('click', resetMovePlayback);
 els.moveSpeed.addEventListener('input', applyMoveSpeed);
 els.moveHelpers.addEventListener('change', applyMoveOptions);
 els.moveFootLock.addEventListener('change', applyMoveOptions);
-els.fbxInspect.addEventListener('click', inspectSelectedFbx);
+els.avaPlay.addEventListener('click', playSelectedAva);
+els.avaStop.addEventListener('click', stopAvaPlayback);
+els.avaSpeed.addEventListener('input', applyAvaSpeed);
+els.avaUseAvak.addEventListener('change', () => {
+  viewport.setUseAvak(els.avaUseAvak.checked);
+  if (playingAvaMove) {
+    playSelectedAva();
+  }
+});
 els.rigMode.addEventListener('change', clearRigSelection);
 els.rigSearch.addEventListener('input', renderRigList);
 els.skeletonVisible.addEventListener('change', () => {
@@ -507,10 +584,9 @@ window.addEventListener('resize', () => viewport.resize());
 activateTab('viewer');
 resetStageControls();
 renderMoveList();
-renderFbxList();
-updateFbxMetadata(null);
 applyMoveSpeed();
 applyMoveOptions();
+applyAvaSpeed();
 updateMoveStatus(viewport.getMoveStatus());
 viewport.resize();
 viewport.start();

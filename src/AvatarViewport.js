@@ -4,6 +4,8 @@ import { Stage } from './Stage.js';
 import { ModelLoader } from './ModelLoader.js';
 import { Rig } from './Rig.js';
 import { MoveSystem } from './MoveSystem.js';
+import { FbxToAva } from './FbxToAva.js';
+import { Avatar } from './Avatar.js';
 
 export class AvatarViewport {
   constructor(container, callbacks = {}) {
@@ -15,11 +17,23 @@ export class AvatarViewport {
       onMoveStatus: (status) => this.callbacks.onMoveStatus?.(status),
     });
 
-    this.clock = new THREE.Clock();
+    this.timer = new THREE.Timer();
     this.frameId = null;
-    this.currentRoot = null;
-    this.currentVrm = null;
+    this.avatar = null;
     this.currentObjectUrl = null;
+    this.fbx = {
+      root: null,
+      mixer: null,
+      path: null,
+      playing: false,
+    };
+    this.avaMoves = [];
+    this.useAvak = false;
+  }
+
+  setUseAvak(enabled) {
+    this.useAvak = enabled;
+    this.avatar?.setUseAvak(enabled);
   }
 
   start() {
@@ -38,12 +52,13 @@ export class AvatarViewport {
   }
 
   renderFrame() {
-    const delta = this.clock.getDelta();
+    this.timer.update();
+    const delta = this.timer.getDelta();
     let rootRotated = false;
 
-    if (this.stage.stage.autoRotate && this.currentRoot) {
-      this.currentRoot.rotation.y += delta * 0.22;
-      this.currentRoot.updateWorldMatrix(true, true);
+    if (this.stage.stage.autoRotate && this.avatar?.root) {
+      this.avatar.root.rotation.y += delta * 0.22;
+      this.avatar.root.updateWorldMatrix(true, true);
       rootRotated = true;
     }
 
@@ -54,14 +69,24 @@ export class AvatarViewport {
     }
 
     this.rig.applyManualBoneRotations('humanoid');
-    if (this.currentVrm?.update) {
-      this.currentVrm.update(delta);
+
+    if (this.fbx.playing && this.fbx.mixer) {
+      this.fbx.mixer.update(delta);
     }
+
+    if (this.avatar) {
+      this.avatar.update(delta);
+    }
+
     this.rig.applyManualBoneRotations('raw');
     this.rig.updateSelectedAxes();
 
     if (this.moveSystem.move.playing) {
       this.moveSystem.emitStatus();
+    }
+
+    if (this.avatar?.isAvaPlaying()) {
+      this.callbacks.onAvaStatus?.(this.avatar.getAvaMoveStatus());
     }
 
     this.stage.render();
@@ -80,9 +105,17 @@ export class AvatarViewport {
   }
 
   resetCamera() {
-    if (this.currentRoot) {
-      this.stage.frameObject(this.currentRoot);
+    if (this.avatar?.root) {
+      this.stage.frameObject(this.avatar.root);
     }
+  }
+
+  resetPose() {
+    this.avatar?.stopAnimation();
+    this.stopFbxAnimation();
+    this.moveSystem.setPlaying(false);
+    this.moveSystem.reset();
+    this.avatar?.resetPose();
   }
 
   async loadAvatar(path, label = path, options = {}) {
@@ -101,8 +134,7 @@ export class AvatarViewport {
 
       this.clearCurrentModel();
       this.currentObjectUrl = objectUrl;
-      this.currentRoot = result.root;
-      this.currentVrm = result.vrm;
+      this.avatar = new Avatar(result.vrm, result.root, path, { useAvak: this.useAvak });
       this.stage.scene.add(result.root);
       this.rig.indexBones(result.root, result.vrm);
       this.moveSystem.setupMoveRig(result.root, result.vrm);
@@ -146,13 +178,102 @@ export class AvatarViewport {
     }
   }
 
-  clearCurrentModel() {
-    if (this.currentRoot) {
-      this.stage.scene.remove(this.currentRoot);
-      disposeObject(this.currentRoot);
+  async playFbxAnimation(path, label = path) {
+    this.stopFbxAnimation();
+    this.callbacks.onState?.('Loading FBX', 'loading');
+    this.callbacks.onProgress?.('Loading animation...');
+
+    try {
+      const result = await this.modelLoader.loadFbxAnimation(path, label, (text) => {
+        this.callbacks.onProgress?.(text);
+      });
+      if (!result || result.clips.length === 0) {
+        throw new Error('No animation clips found');
+      }
+
+      if (this.avatar?.root) {
+        this.avatar.root.visible = false;
+      }
+
+      this.fbx.root = result.root;
+      this.fbx.path = path;
+      this.stage.scene.add(result.root);
+      this.fitFbxRoot(result.root);
+
+      this.fbx.mixer = new THREE.AnimationMixer(result.root);
+      result.clips.forEach((clip) => {
+        const action = this.fbx.mixer.clipAction(clip);
+        action.setEffectiveTimeScale(1);
+        action.play();
+      });
+      this.fbx.playing = true;
+
+      this.stage.frameObject(result.root);
+      this.callbacks.onState?.('Playing FBX', 'ready');
+      this.callbacks.onProgress?.('');
+      return result;
+    } catch (error) {
+      console.error(error);
+      this.stopFbxAnimation();
+      this.callbacks.onState?.('Failed', 'error');
+      this.callbacks.onProgress?.(error instanceof Error ? error.message : String(error));
+      throw error;
     }
-    this.currentRoot = null;
-    this.currentVrm = null;
+  }
+
+  stopFbxAnimation() {
+    if (!this.fbx.root) return;
+
+    if (this.fbx.mixer) {
+      this.fbx.mixer.stopAllAction();
+      this.fbx.mixer = null;
+    }
+
+    this.stage.scene.remove(this.fbx.root);
+    disposeObject(this.fbx.root);
+    this.fbx.root = null;
+    this.fbx.path = null;
+    this.fbx.playing = false;
+
+    if (this.avatar?.root) {
+      this.avatar.root.visible = true;
+      this.stage.frameObject(this.avatar.root);
+      this.callbacks.onState?.('Ready', 'ready');
+    } else {
+      this.callbacks.onState?.('No model', 'neutral');
+    }
+  }
+
+  getFbxStatus() {
+    return {
+      ready: Boolean(this.fbx.root),
+      playing: this.fbx.playing,
+      path: this.fbx.path,
+    };
+  }
+
+  fitFbxRoot(root) {
+    if (!this.avatar?.root) return;
+
+    const currentBox = new THREE.Box3().setFromObject(this.avatar.root);
+    const currentHeight = currentBox.getSize(new THREE.Vector3()).y;
+    if (currentHeight <= 0) return;
+
+    const fbxBox = new THREE.Box3().setFromObject(root);
+    const fbxHeight = fbxBox.getSize(new THREE.Vector3()).y;
+    if (fbxHeight <= 0) return;
+
+    const scale = currentHeight / fbxHeight;
+    if (scale > 0 && scale < 100) {
+      root.scale.setScalar(scale);
+    }
+  }
+
+  clearCurrentModel() {
+    this.stopFbxAnimation();
+    this.avatar?.dispose();
+    this.avatar = null;
+    this.avaMoves = [];
 
     if (this.currentObjectUrl) {
       URL.revokeObjectURL(this.currentObjectUrl);
@@ -189,6 +310,60 @@ export class AvatarViewport {
 
   resetMove() {
     this.moveSystem.reset();
+  }
+
+  async loadAvaMoves(paths, onProgress = null) {
+    const converter = new FbxToAva();
+    const moves = [];
+    for (let i = 0; i < paths.length; i++) {
+      const { path, name } = paths[i];
+      if (onProgress) onProgress(`Converting ${name}...`);
+      try {
+        const root = await this.modelLoader.fbxLoader.loadAsync(path);
+        const ava = converter.convert(root, name, path);
+        moves.push({ path, name, ava });
+        disposeObject(root);
+      } catch (error) {
+        console.error(`Failed to convert ${name} to AVA`, error);
+      }
+    }
+    if (onProgress) onProgress('');
+    this.avaMoves = moves;
+    return moves;
+  }
+
+  playAvaMove(name, kind = 'full') {
+    if (!this.avatar) return false;
+
+    const move = this.avaMoves.find((m) => m.name === name);
+    if (!move) return false;
+
+    this.moveSystem.setPlaying(false);
+    return this.avatar.playAvaMove(move, kind);
+  }
+
+  stopAvaMove() {
+    this.avatar?.stopAnimation();
+  }
+
+  getAvaStatus() {
+    return {
+      ready: this.avaMoves.length > 0,
+      playing: this.avatar?.isAvaPlaying() || false,
+      moveCount: this.avaMoves.length,
+    };
+  }
+
+  getAvaMoves() {
+    return this.avaMoves;
+  }
+
+  setAvaTimeScale(scale) {
+    this.avatar?.setAvaTimeScale(scale);
+  }
+
+  getAvaMoveStatus() {
+    return this.avatar?.getAvaMoveStatus() || { playing: false, time: 0, duration: 0 };
   }
 
   getRigInfo(mode) {

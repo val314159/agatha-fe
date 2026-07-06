@@ -469,6 +469,17 @@ output {
   background: #e6f6f8;
 }
 
+.fbx-item.is-playing {
+  border-color: #7657c9;
+  background: #f4f0ff;
+}
+
+.fbx-toolbar {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.5rem;
+}
+
 .move-meta,
 .fbx-meta {
   display: grid;
