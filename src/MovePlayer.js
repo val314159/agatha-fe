@@ -7,6 +7,9 @@ export class MovePlayer {
     this.clip = null;
     this.action = null;
     this.timeScale = 0.6;
+    this.beatSync = false;
+    this.beatState = null;
+    this.pendingStart = false;
   }
 
   setRoot(root) {
@@ -16,9 +19,31 @@ export class MovePlayer {
 
   setTimeScale(scale) {
     this.timeScale = scale;
-    if (this.action) {
+    if (this.action && !this.beatSync) {
       this.action.setEffectiveTimeScale(scale);
     }
+  }
+
+  setBeatSync(enabled) {
+    this.beatSync = Boolean(enabled);
+    this.pendingStart = false;
+    if (this.action) {
+      if (enabled) {
+        this.action.setEffectiveTimeScale(0);
+      } else {
+        this.action.setEffectiveTimeScale(this.timeScale);
+      }
+    }
+  }
+
+  setBeatState(state) {
+    this.beatState = state || null;
+  }
+
+  computeBeatFloat() {
+    if (!this.beatState) return 0;
+    const beatPeriodMs = 60000 / this.beatState.bpm;
+    return ((performance.now() - this.beatState.anchorTimeMs + this.beatState.offsetMs) / beatPeriodMs) + this.beatState.anchorBeat;
   }
 
   getStatus() {
@@ -56,7 +81,13 @@ export class MovePlayer {
     this.clip = new THREE.AnimationClip(avar.name || 'avar', avar.duration, tracks);
     this.mixer = new THREE.AnimationMixer(this.root);
     this.action = this.mixer.clipAction(this.clip);
-    this.action.setEffectiveTimeScale(this.timeScale);
+
+    if (this.beatSync && this.beatState?.avaEnabled) {
+      this.action.setEffectiveTimeScale(0);
+      this.pendingStart = true;
+    } else {
+      this.action.setEffectiveTimeScale(this.timeScale);
+    }
     this.action.play();
   }
 
@@ -69,10 +100,30 @@ export class MovePlayer {
       this.mixer = null;
     }
     this.clip = null;
+    this.pendingStart = false;
   }
 
   update(delta) {
-    if (this.mixer) {
+    if (!this.mixer || !this.action) return;
+
+    if (this.beatSync && this.beatState?.avaEnabled) {
+      if (this.pendingStart) {
+        const beatFloat = this.computeBeatFloat();
+        const beatCount = ((Math.floor(beatFloat) % 4) + 4) % 4 + 1;
+        const phase = beatFloat - Math.floor(beatFloat);
+        if (beatCount === 1 && phase < 0.05) {
+          this.pendingStart = false;
+        } else {
+          return;
+        }
+      }
+
+      const beatFloat = this.computeBeatFloat();
+      const beatPhaseInBar = (((beatFloat % 4) + 4) % 4) / 4;
+      const duration = this.clip?.duration || 1;
+      this.action.time = beatPhaseInBar * duration;
+      this.mixer.update(0);
+    } else {
       this.mixer.update(delta);
     }
   }

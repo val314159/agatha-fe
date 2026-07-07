@@ -29,6 +29,18 @@ export class AvatarViewport {
     };
     this.avaMoves = [];
     this.useAvak = false;
+    this.beatSync = false;
+    this.avaBeatSync = false;
+  }
+
+  setBeatSync(enabled) {
+    this.beatSync = Boolean(enabled);
+    this.moveSystem.setBeatSync(enabled);
+  }
+
+  setAvaBeatSync(enabled) {
+    this.avaBeatSync = Boolean(enabled);
+    this.avatar?.setAvaBeatSync(enabled);
   }
 
   setUseAvak(enabled) {
@@ -61,6 +73,9 @@ export class AvatarViewport {
       this.avatar.root.updateWorldMatrix(true, true);
       rootRotated = true;
     }
+
+    this.moveSystem.setBeatState(this.callbacks.getBeatState?.());
+    this.avatar?.setBeatState(this.callbacks.getBeatState?.());
 
     if (this.moveSystem.move.playing) {
       this.moveSystem.update(delta);

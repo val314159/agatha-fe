@@ -50,6 +50,14 @@ export class Avatar {
     this.useAvak = enabled;
   }
 
+  setAvaBeatSync(enabled) {
+    this.movePlayer?.setBeatSync(enabled);
+  }
+
+  setBeatState(state) {
+    this.movePlayer?.setBeatState(state);
+  }
+
   setAvaTimeScale(scale) {
     this.movePlayer?.setTimeScale(scale);
   }

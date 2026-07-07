@@ -1,50 +1,54 @@
 // BeatTracker.js
-// Listens to ambient audio via microphone, detects beats, and tracks BPM.
+// Uses aubiojs (WASM) + AudioWorklet for real-time BPM detection from mic.
 //
 // Usage:
 //   const tracker = new BeatTracker();
-//   await tracker.start();          // requests mic permission
+//   await tracker.start();          // requests mic permission, loads aubio WASM
 //   tracker.update();               // call each frame
 //   const bpm = tracker.getBPM();   // null until locked on
 //   tracker.stop();                 // release mic
 
+const BUFFER_SIZE = 1024;
+const HOP_SIZE = 512;
 
-const FFT_SIZE = 1024;
-const SMOOTHING = 0.7;
-
-// Low-frequency band for beat detection (as fraction of Nyquist)
-const LOW_BAND = 0.06;  // ~0-1.3kHz at 44.1kHz
-
-// Rolling window for BPM estimation
-const WINDOW_SECONDS = 10;
-const MIN_ONSETS = 4;
-const MAX_ONSETS = 200;
-
-// BPM sanity bounds
-const MIN_BPM = 60;
-const MAX_BPM = 200;
+// Onset detection defaults (can be overridden via constructor opts)
+const DEFAULT_ONSET_THRESHOLD = 0.1;
+const DEFAULT_ONSET_SILENCE = -70;
+const DEFAULT_ONSET_MINIOI_S = 0.04;
 
 export class BeatTracker {
   constructor(opts = {}) {
-    this.fftSize = opts.fftSize ?? FFT_SIZE;
-    this.smoothing = opts.smoothing ?? SMOOTHING;
-    this.lowBand = opts.lowBand ?? LOW_BAND;
-    this.onsetThreshold = opts.onsetThreshold ?? 0.25;
-    this.onsetCooldown = opts.onsetCooldown ?? 6;
-    this.windowSeconds = opts.windowSeconds ?? WINDOW_SECONDS;
+    this.bufferSize = opts.bufferSize ?? BUFFER_SIZE;
+    this.hopSize = opts.hopSize ?? HOP_SIZE;
+    this.onsetThreshold = opts.onsetThreshold ?? DEFAULT_ONSET_THRESHOLD;
+    this.onsetSilence = opts.onsetSilence ?? DEFAULT_ONSET_SILENCE;
+    this.onsetMinioiS = opts.onsetMinioiS ?? DEFAULT_ONSET_MINIOI_S;
+    this.onAdaptiveWhitening = opts.onAdaptiveWhitening ?? true;
+    this.onCompression = opts.onCompression ?? true;
 
     this.audioCtx = null;
-    this.analyser = null;
     this.stream = null;
     this.source = null;
-    this._freqData = null;
-    this._prevSpectrum = null;
-    this._onsetTimes = [];
-    this._onsetDecay = 0;
+    this.workletNode = null;
+    this.tempo = null;
+    this.onset = null;
+    this._running = false;
+
+    this._sampleBuffer = new Float32Array(this.hopSize);
+    this._bufferFill = 0;
     this._bpm = null;
     this._bpmConfidence = 0;
-    this._lastOnsetTime = 0;
-    this._running = false;
+    this._beatDetected = false;
+    this._beatTimestamp = null;
+    this._onsetTimestamp = null;
+    this._onsetDescriptor = 0;
+    this._rms = 0;
+    this._lowEnergy = 0;
+    this._midEnergy = 0;
+    this._highEnergy = 0;
+
+    // Callback fired when aubio detects a beat, with audioCtx.currentTime
+    this.onBeat = null;
 
     this._features = {
       lowEnergy: 0,
@@ -53,6 +57,7 @@ export class BeatTracker {
       rms: 0,
       onset: 0,
       onsetActive: false,
+      onsetDescriptor: 0,
       lowEnergySmooth: 0,
       midEnergySmooth: 0,
       highEnergySmooth: 0,
@@ -67,6 +72,14 @@ export class BeatTracker {
                 (window.AudioContext || window.webkitAudioContext)) || null;
     if (!AC) throw new Error('Web Audio API not supported');
 
+    if (!AC.prototype.audioWorklet) {
+      throw new Error('AudioWorklet not supported in this browser');
+    }
+
+    const aubioModule = await import('aubiojs');
+    const aubioFactory = aubioModule.default;
+    const Aubio = await aubioFactory();
+
     this.stream = await navigator.mediaDevices.getUserMedia({
       audio: {
         echoCancellation: false,
@@ -76,34 +89,118 @@ export class BeatTracker {
     });
 
     this.audioCtx = new AC();
+    const sampleRate = this.audioCtx.sampleRate;
+
+    this.tempo = new Aubio.Tempo(this.bufferSize, this.hopSize, sampleRate);
+    this.onset = new Aubio.Onset(this.bufferSize, this.hopSize, sampleRate);
+
+    this.onset.setThreshold(this.onsetThreshold);
+    this.onset.setSilence(this.onsetSilence);
+    this.onset.setMinioiS(this.onsetMinioiS);
+    this.onset.setAwhitening(this.onAdaptiveWhitening);
+    this.onset.setCompression(this.onCompression);
+
+    const workletUrl = new URL('./beatWorklet.js', import.meta.url);
+    await this.audioCtx.audioWorklet.addModule(workletUrl);
+
     this.source = this.audioCtx.createMediaStreamSource(this.stream);
+    this.workletNode = new AudioWorkletNode(this.audioCtx, 'beat-capture');
+    this.source.connect(this.workletNode);
 
-    this.analyser = this.audioCtx.createAnalyser();
-    this.analyser.fftSize = this.fftSize;
-    this.analyser.smoothingTimeConstant = this.smoothing;
-    this.source.connect(this.analyser);
-    // Note: analyser is NOT connected to destination — we don't want
-    // to play the mic input back through speakers (feedback loop).
+    this.workletNode.port.onmessage = (e) => {
+      this._onAudioFrame(e.data);
+    };
 
-    this._freqData = new Uint8Array(this.analyser.frequencyBinCount);
-    this._prevSpectrum = new Float32Array(this.analyser.frequencyBinCount);
-    this._onsetTimes = [];
-    this._onsetDecay = 0;
     this._bpm = null;
     this._bpmConfidence = 0;
+    this._bufferFill = 0;
+    this._beatDetected = false;
+    this._beatTimestamp = null;
+    this._onsetTimestamp = null;
+    this._onsetDescriptor = 0;
+    this.onset?.reset();
     this._running = true;
+  }
+
+  _onAudioFrame(frame) {
+    let offset = 0;
+    while (offset < frame.length) {
+      const remaining = this.hopSize - this._bufferFill;
+      const toCopy = Math.min(frame.length - offset, remaining);
+      this._sampleBuffer.set(frame.subarray(offset, offset + toCopy), this._bufferFill);
+      this._bufferFill += toCopy;
+      offset += toCopy;
+
+      if (this._bufferFill >= this.hopSize) {
+        this._processHop();
+        this._bufferFill = 0;
+      }
+    }
+
+    let sum = 0;
+    let lowSum = 0, midSum = 0, highSum = 0;
+    const n = frame.length;
+    const lowEnd = Math.floor(n * 0.1);
+    const midEnd = Math.floor(n * 0.4);
+    for (let i = 0; i < n; i++) {
+      const s = frame[i];
+      sum += s * s;
+      const e = s * s;
+      if (i < lowEnd) lowSum += e;
+      else if (i < midEnd) midSum += e;
+      else highSum += e;
+    }
+    this._rms = Math.sqrt(sum / n);
+    this._lowEnergy = Math.sqrt(lowSum / lowEnd);
+    this._midEnergy = Math.sqrt(midSum / (midEnd - lowEnd));
+    this._highEnergy = Math.sqrt(highSum / (n - midEnd));
+  }
+
+  _processHop() {
+    const buffer = this._sampleBuffer;
+    const now = this.audioCtx?.currentTime ?? 0;
+
+    const beat = this.tempo.do(buffer);
+    if (beat > 0) {
+      this._beatDetected = true;
+      this._beatTimestamp = now;
+      if (this.onBeat) this.onBeat(now);
+    }
+
+    const onsetResult = this.onset.do(buffer);
+    if (onsetResult > 0) {
+      this._onsetTimestamp = this.onset.getLastS();
+    }
+    this._onsetDescriptor = this.onset.getDescriptor();
+
+    const bpm = this.tempo.getBpm();
+    const conf = this.tempo.getConfidence();
+
+    if (bpm > 0) {
+      if (this._bpm === null) {
+        this._bpm = bpm;
+      } else {
+        this._bpm += (bpm - this._bpm) * 0.15;
+      }
+    }
+
+    if (conf > 0) {
+      this._bpmConfidence = conf;
+    } else {
+      this._bpmConfidence *= 0.95;
+    }
   }
 
   stop() {
     this._running = false;
 
+    if (this.workletNode) {
+      try { this.workletNode.port.onmessage = null; this.workletNode.disconnect(); } catch (e) {}
+      this.workletNode = null;
+    }
     if (this.source) {
       try { this.source.disconnect(); } catch (e) {}
       this.source = null;
-    }
-    if (this.analyser) {
-      try { this.analyser.disconnect(); } catch (e) {}
-      this.analyser = null;
     }
     if (this.stream) {
       this.stream.getTracks().forEach((t) => t.stop());
@@ -113,166 +210,46 @@ export class BeatTracker {
       this.audioCtx.close().catch(() => {});
       this.audioCtx = null;
     }
-    this._freqData = null;
-    this._prevSpectrum = null;
-    this._onsetTimes = [];
+    this.tempo = null;
+    this.onset = null;
     this._bpm = null;
     this._bpmConfidence = 0;
+    this._bufferFill = 0;
+    this._beatDetected = false;
+    this._beatTimestamp = null;
+    this._onsetTimestamp = null;
+    this._onsetDescriptor = 0;
+    this._lowEnergy = 0;
+    this._midEnergy = 0;
+    this._highEnergy = 0;
   }
 
   isRunning() {
     return this._running;
   }
 
-  /**
-   * Call once per animation frame.
-   * Updates features and BPM estimate.
-   * @returns {Object} features object
-   */
   update() {
-    if (!this._running || !this.analyser) {
+    if (!this._running) {
       this._decayFeatures();
       return this._features;
     }
 
-    this.analyser.getByteFrequencyData(this._freqData);
-
-    const bins = this._freqData.length;
-    const lowEnd = Math.max(1, Math.floor(bins * this.lowBand));
-    const midEnd = Math.floor(bins * 0.25);
-
-    let lowSum = 0, midSum = 0, highSum = 0;
-    let spectralFlux = 0;
-
-    for (let i = 0; i < bins; i++) {
-      const v = this._freqData[i] / 255;
-      if (i < lowEnd) lowSum += v;
-      else if (i < midEnd) midSum += v;
-      else highSum += v;
-
-      const diff = v - this._prevSpectrum[i];
-      if (diff > 0) spectralFlux += diff;
-      this._prevSpectrum[i] = v;
-    }
-
-    const lowEnergy = lowSum / lowEnd;
-    const midEnergy = midSum / (midEnd - lowEnd);
-    const highEnergy = highSum / (bins - midEnd);
-    const spectralFluxNorm = spectralFlux / bins;
-
-    // RMS approximation from frequency data (no time-domain read needed)
-    let totalEnergy = 0;
-    for (let i = 0; i < bins; i++) totalEnergy += this._freqData[i] / 255;
-    const rms = Math.sqrt(totalEnergy / bins);
-
-    // Onset detection
-    const now = this.audioCtx.currentTime;
-    let onset = 0;
-    if (spectralFluxNorm > this.onsetThreshold && this._onsetDecay <= 0) {
-      onset = 1;
-      this._onsetDecay = this.onsetCooldown;
-      this._onsetTimes.push(now);
-      this._lastOnsetTime = now;
-    } else {
-      this._onsetDecay = Math.max(0, this._onsetDecay - 1);
-    }
-
-    // Trim old onsets outside the rolling window
-    const windowStart = now - this.windowSeconds;
-    while (this._onsetTimes.length && this._onsetTimes[0] < windowStart) {
-      this._onsetTimes.shift();
-    }
-
-    this._estimateBPM();
-
-    // Smooth features
-    const a = 0.3;
     const f = this._features;
-    f.lowEnergy = lowEnergy;
-    f.midEnergy = midEnergy;
-    f.highEnergy = highEnergy;
-    f.rms = rms;
-    f.onset = onset;
-    f.onsetActive = onset > 0;
-    f.lowEnergySmooth += (lowEnergy - f.lowEnergySmooth) * a;
-    f.midEnergySmooth += (midEnergy - f.midEnergySmooth) * a;
-    f.highEnergySmooth += (highEnergy - f.highEnergySmooth) * a;
-    f.rmsSmooth += (rms - f.rmsSmooth) * a;
+    f.rms = this._rms;
+    f.lowEnergy = this._lowEnergy;
+    f.midEnergy = this._midEnergy;
+    f.highEnergy = this._highEnergy;
+    f.onset = this._beatDetected ? 1 : 0;
+    f.onsetActive = this._beatDetected;
+    f.onsetDescriptor = this._onsetDescriptor;
+    f.lowEnergySmooth += (this._lowEnergy - f.lowEnergySmooth) * 0.3;
+    f.midEnergySmooth += (this._midEnergy - f.midEnergySmooth) * 0.3;
+    f.highEnergySmooth += (this._highEnergy - f.highEnergySmooth) * 0.3;
+    f.rmsSmooth += (this._rms - f.rmsSmooth) * 0.3;
+
+    this._beatDetected = false;
 
     return f;
-  }
-
-  /**
-   * Estimate BPM from onset intervals using histogram of inter-onset distances.
-   * Picks the most common interval, converts to BPM.
-   */
-  _estimateBPM() {
-    const times = this._onsetTimes;
-    if (times.length < MIN_ONSETS) {
-      this._bpm = null;
-      this._bpmConfidence = 0;
-      return;
-    }
-
-    // Compute all inter-onset intervals
-    const intervals = [];
-    for (let i = 1; i < times.length; i++) {
-      for (let j = Math.max(0, i - 8); j < i; j++) {
-        const dt = times[i] - times[j];
-        if (dt > 0.2 && dt < 2.0) {  // 30-300 BPM range
-          intervals.push(dt);
-        }
-      }
-    }
-
-    if (intervals.length < 3) {
-      this._bpmConfidence *= 0.9;
-      return;
-    }
-
-    // Build a histogram with fine resolution
-    const binSize = 0.005;  // 5ms bins
-    const minInterval = 0.3;  // 200 BPM
-    const maxInterval = 1.0;  // 60 BPM
-    const numBins = Math.floor((maxInterval - minInterval) / binSize);
-    const histogram = new Int32Array(numBins);
-
-    for (const dt of intervals) {
-      const bin = Math.floor((dt - minInterval) / binSize);
-      if (bin >= 0 && bin < numBins) histogram[bin]++;
-    }
-
-    // Find the peak bin
-    let bestBin = 0;
-    let bestCount = 0;
-    for (let i = 0; i < numBins; i++) {
-      if (histogram[i] > bestCount) {
-        bestCount = histogram[i];
-        bestBin = i;
-      }
-    }
-
-    if (bestCount < 2) {
-      this._bpmConfidence *= 0.9;
-      return;
-    }
-
-    const bestInterval = minInterval + (bestBin + 0.5) * binSize;
-    let bpm = 60 / bestInterval;
-
-    // Fold into sane range (handle half/double time)
-    while (bpm < MIN_BPM) bpm *= 2;
-    while (bpm > MAX_BPM) bpm /= 2;
-
-    // Smooth BPM updates
-    if (this._bpm === null) {
-      this._bpm = bpm;
-    } else {
-      this._bpm += (bpm - this._bpm) * 0.15;
-    }
-
-    // Confidence: ratio of peak count to total intervals
-    this._bpmConfidence = Math.min(1, bestCount / intervals.length);
   }
 
   getBPM() {
@@ -291,6 +268,18 @@ export class BeatTracker {
     return this._bpm !== null && this._bpmConfidence > 0.3;
   }
 
+  getBeatTimestamp() {
+    return this._beatTimestamp;
+  }
+
+  getOnsetTimestamp() {
+    return this._onsetTimestamp;
+  }
+
+  getOnsetDescriptor() {
+    return this._onsetDescriptor;
+  }
+
   _decayFeatures() {
     const f = this._features;
     const decay = 0.92;
@@ -300,7 +289,6 @@ export class BeatTracker {
     f.rmsSmooth *= decay;
     f.onset = 0;
     f.onsetActive = false;
-    this._onsetDecay = Math.max(0, this._onsetDecay - 1);
     this._bpmConfidence *= 0.95;
   }
 }

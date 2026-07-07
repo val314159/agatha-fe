@@ -324,6 +324,11 @@ output {
   opacity: 0.58;
 }
 
+input[type="range"]:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 .sr-only {
   position: absolute;
   width: 1px;

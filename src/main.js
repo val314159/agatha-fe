@@ -64,6 +64,7 @@ const els = {
   moveHelpers: document.querySelector('#move-helpers'),
   moveFootLock: document.querySelector('#move-foot-lock'),
   moveBalance: document.querySelector('#move-balance'),
+  moveBeatSync: document.querySelector('#move-beat-sync'),
   moveCount: document.querySelector('#move-count'),
   moveList: document.querySelector('#move-list'),
   moveActive: document.querySelector('#move-active'),
@@ -115,6 +116,7 @@ const els = {
   avaSpeed: document.querySelector('#ava-speed'),
   avaSpeedValue: document.querySelector('#ava-speed-value'),
   avaUseAvak: document.querySelector('#ava-use-avak'),
+  avaBeatSync: document.querySelector('#ava-beat-sync'),
   metaSource: document.querySelector('#meta-source'),
   metaFormat: document.querySelector('#meta-format'),
   metaMeshes: document.querySelector('#meta-meshes'),
@@ -166,6 +168,14 @@ const viewport = new AvatarViewport(els.viewport, {
   onModelLoaded: updateMetadata,
   onMoveStatus: updateMoveStatus,
   onAvaStatus: updateAvaStatus,
+  getBeatState: () => ({
+    bpm: beatState.bpm,
+    offsetMs: beatState.offsetMs,
+    anchorTimeMs: beatState.anchorTimeMs,
+    anchorBeat: beatState.anchorBeat,
+    enabled: els.moveBeatSync.checked,
+    avaEnabled: els.avaBeatSync.checked,
+  }),
 });
 const movePresets = viewport.getMovePresets();
 selectedMoveId = movePresets[0]?.id || null;
@@ -435,10 +445,11 @@ async function startBeatSampling() {
   renderBeatState();
 
   try {
+    beatTracker.onBeat = (audioTime) => onAubioBeat(audioTime);
     await beatTracker.start();
     beatState.sampling = true;
     beatState.mode = 'Sampling';
-    beatState.status = 'Sampling mic for BPM. Use Set 1 after applying detected BPM.';
+    beatState.status = 'Sampling mic for BPM. Auto-syncing beats from aubio.';
   } catch (error) {
     beatState.sampling = false;
     beatState.sampleError = error instanceof Error ? error.message : String(error);
@@ -449,6 +460,7 @@ async function startBeatSampling() {
 }
 
 function stopBeatSampling(status = 'Mic sampling stopped.') {
+  beatTracker.onBeat = null;
   beatTracker.stop();
   beatState.sampling = false;
   beatState.detectedLevel = 0;
@@ -466,7 +478,7 @@ function updateBeatSampling() {
   const confidence = beatTracker.getBPMConfidence();
   beatState.detectedBpm = Number.isFinite(bpm) ? bpm : null;
   beatState.detectedConfidence = Number.isFinite(confidence) ? confidence : 0;
-  beatState.detectedLevel = clampNumber(features.rmsSmooth || features.rms || 0, 0, 1);
+  beatState.detectedLevel = clampNumber(features.onsetDescriptor || features.rmsSmooth || features.rms || 0, 0, 1);
   beatState.detectedOnset = Boolean(features.onsetActive);
 
   if (beatTracker.isLocked() && beatState.detectedBpm) {
@@ -477,10 +489,27 @@ function updateBeatSampling() {
 function useDetectedBeatBpm() {
   if (!beatState.detectedBpm) return;
 
-  setBeatBpm(beatState.detectedBpm, `Using detected ${beatState.detectedBpm.toFixed(1)} BPM. Press Set Beat Now or Set 1 to align phase.`);
+  setBeatBpm(beatState.detectedBpm, `Using detected ${beatState.detectedBpm.toFixed(1)} BPM. Auto-syncing beats from aubio.`);
   beatState.confidence = Math.max(beatState.confidence, beatState.detectedConfidence);
   beatState.mode = 'Mic';
   renderBeatState();
+}
+
+function onAubioBeat(audioTime) {
+  if (!beatState.sampling || !beatState.detectedBpm) return;
+
+  const bpm = beatState.detectedBpm;
+  const beatPeriodMs = 60000 / bpm;
+  const now = performance.now();
+
+  if (beatState.mode !== 'Mic' || beatState.bpm !== bpm) {
+    setBeatBpm(bpm, `Auto-synced ${bpm.toFixed(1)} BPM from aubio.`);
+    beatState.mode = 'Mic';
+    beatState.confidence = Math.max(beatState.confidence, beatState.detectedConfidence);
+  }
+
+  beatState.anchorTimeMs = now;
+  beatState.anchorBeat = Math.round(beatState.anchorBeat);
 }
 
 function setBeatStartTarget(beatsPerTarget, label) {
@@ -823,6 +852,11 @@ els.moveSpeed.addEventListener('input', applyMoveSpeed);
 els.moveHelpers.addEventListener('change', applyMoveOptions);
 els.moveFootLock.addEventListener('change', applyMoveOptions);
 els.moveBalance.addEventListener('change', applyMoveOptions);
+els.moveBeatSync.addEventListener('change', () => {
+  const enabled = els.moveBeatSync.checked;
+  viewport.setBeatSync(enabled);
+  els.moveSpeed.disabled = enabled;
+});
 els.beatTap.addEventListener('click', tapBeat);
 els.beatSetBeat.addEventListener('click', () => setBeatNow('Beat aligned to now.'));
 els.beatSetDownbeat.addEventListener('click', () => setBeatNow('Downbeat set to now.', true));
@@ -853,6 +887,11 @@ els.beatNudgeButtons.forEach((button) => {
 els.avaPlay.addEventListener('click', playSelectedAva);
 els.avaStop.addEventListener('click', stopAvaPlayback);
 els.avaSpeed.addEventListener('input', applyAvaSpeed);
+els.avaBeatSync.addEventListener('change', () => {
+  const enabled = els.avaBeatSync.checked;
+  viewport.setAvaBeatSync(enabled);
+  els.avaSpeed.disabled = enabled;
+});
 els.avaUseAvak.addEventListener('change', () => {
   viewport.setUseAvak(els.avaUseAvak.checked);
   if (playingAvaMove) {

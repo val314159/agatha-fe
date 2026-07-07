@@ -42,12 +42,15 @@ export class MoveSystem {
     this.move = {
       presetId: MOVE_PRESETS[0].id,
       playing: false,
+      pendingStart: false,
       time: 0,
       speed: 1,
       showHelpers: true,
       footLock: true,
       balance: false,
     };
+    this.beatSync = false;
+    this.beatState = null;
     this.balanceSolver = new SimpleBalanceSolver();
   }
 
@@ -92,12 +95,37 @@ export class MoveSystem {
   }
 
   setPlaying(playing) {
-    this.move.playing = Boolean(playing && this.moveRig);
-    if (this.move.playing) {
-      this.moveFootPlants.clear();
+    if (playing && this.beatSync && this.beatState?.enabled) {
+      this.move.pendingStart = true;
+      this.move.playing = false;
+    } else {
+      this.move.playing = Boolean(playing && this.moveRig);
+      this.move.pendingStart = false;
+      if (this.move.playing) {
+        this.moveFootPlants.clear();
+      }
     }
     this.updateHelpersVisibility();
     this.emitStatus();
+  }
+
+  setBeatSync(enabled) {
+    this.beatSync = Boolean(enabled);
+    if (enabled) {
+      this.move.time = 0;
+      this.move.pendingStart = false;
+    }
+    this.emitStatus();
+  }
+
+  setBeatState(state) {
+    this.beatState = state || null;
+  }
+
+  computeBeatFloat() {
+    if (!this.beatState) return 0;
+    const beatPeriodMs = 60000 / this.beatState.bpm;
+    return ((performance.now() - this.beatState.anchorTimeMs + this.beatState.offsetMs) / beatPeriodMs) + this.beatState.anchorBeat;
   }
 
   setSpeed(speed) {
@@ -125,6 +153,7 @@ export class MoveSystem {
   reset() {
     this.move.time = 0;
     this.move.playing = false;
+    this.move.pendingStart = false;
     this.moveFootPlants.clear();
     this.currentVrm?.humanoid?.resetNormalizedPose?.();
     this.currentVrm?.update?.(0);
@@ -212,9 +241,31 @@ export class MoveSystem {
   }
 
   update(delta) {
-    if (!this.moveRig || !this.move.playing) return;
+    if (!this.moveRig) return;
 
-    this.move.time += delta * this.move.speed;
+    if (this.move.pendingStart && this.beatSync && this.beatState?.enabled) {
+      const beatFloat = this.computeBeatFloat();
+      const beatCount = ((Math.floor(beatFloat) % 4) + 4) % 4 + 1;
+      const phase = beatFloat - Math.floor(beatFloat);
+      if (beatCount === 1 && phase < 0.05) {
+        this.move.pendingStart = false;
+        this.move.playing = true;
+        this.move.time = 0;
+        this.moveFootPlants.clear();
+      }
+    }
+
+    if (!this.move.playing) return;
+
+    if (this.beatSync && this.beatState?.enabled) {
+      const beatFloat = this.computeBeatFloat();
+      const beatPhaseInBar = (((beatFloat % 4) + 4) % 4) / 4;
+      const tempo = getMovePreset(this.move.presetId).tempo;
+      this.move.time = beatPhaseInBar / tempo;
+    } else {
+      this.move.time += delta * this.move.speed;
+    }
+
     this.applyAtCurrentTime();
   }
 
