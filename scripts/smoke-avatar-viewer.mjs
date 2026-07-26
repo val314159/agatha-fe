@@ -143,24 +143,31 @@ async function runCheck(browser, check) {
   });
   await page.click('#move-play');
 
-  await page.click('#tab-fbx');
+  await page.click('#tab-ava');
   await page.waitForFunction(() => {
-    const panel = document.querySelector('#panel-fbx');
-    const tab = document.querySelector('#tab-fbx');
+    const panel = document.querySelector('#panel-ava');
+    const tab = document.querySelector('#tab-ava');
     return panel && tab && !panel.hidden && tab.classList.contains('is-active');
   });
   await page.waitForFunction(() => {
     return document.querySelectorAll('.fbx-item').length === 6;
   });
   await page.locator('.fbx-item').nth(2).click();
-  await page.click('#fbx-inspect');
-  await page.waitForFunction(() => {
-    const clips = document.querySelector('#fbx-clips')?.textContent;
-    const duration = document.querySelector('#fbx-duration')?.textContent;
-    return clips && clips !== '-' && clips !== 'Loading' && duration && duration !== '-';
-  }, { timeout: 45000 });
+  if (check.model.endsWith('.vrm')) {
+    for (const stage of ['avar', 'avay', 'avaz']) {
+      await page.locator('.stage-choice label').filter({ hasText: stage.toUpperCase() }).click();
+      await page.click('#ava-play');
+      await page.waitForFunction(() => {
+        return document.querySelector('#ava-play')?.textContent === 'Playing';
+      }, { timeout: 45000 });
+      await page.waitForFunction((expectedStage) => {
+        return document.querySelector('#ava-stage-active')?.textContent === expectedStage.toUpperCase();
+      }, stage);
+      await page.click('#ava-stop');
+    }
+  }
   await page.screenshot({
-    path: `.tmp/avatar-viewer-${check.name}-fbx.png`,
+    path: `.tmp/avatar-viewer-${check.name}-ava.png`,
     fullPage: true,
   });
 

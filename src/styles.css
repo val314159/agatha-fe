@@ -251,6 +251,60 @@ input[type="range"] {
   padding: 0 0.65rem;
 }
 
+.stage-choice {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.35rem;
+  margin: 0;
+  border: 1px solid #cbd6d9;
+  border-radius: 8px;
+  background: #eef3f4;
+  padding: 1.3rem 0.25rem 0.25rem;
+  position: relative;
+}
+
+.stage-choice legend {
+  position: absolute;
+  top: 0.35rem;
+  left: 0.55rem;
+  color: #526268;
+  font-size: 0.68rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.stage-choice label {
+  min-width: 0;
+}
+
+.stage-choice input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.stage-choice span {
+  display: grid;
+  min-height: 2.15rem;
+  place-items: center;
+  border-radius: 6px;
+  color: #526268;
+  font-size: 0.82rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.stage-choice input:focus-visible + span {
+  outline: 2px solid #247c87;
+  outline-offset: 2px;
+}
+
+.stage-choice input:checked + span {
+  background: #ffffff;
+  color: #172024;
+  box-shadow: 0 1px 4px rgb(23 32 36 / 0.12);
+}
+
 output {
   float: right;
   color: #172024;

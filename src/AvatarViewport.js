@@ -6,8 +6,11 @@ import { Rig } from './Rig.js';
 import { MoveSystem } from './MoveSystem.js';
 import { FbxToAva } from './FbxToAva.js';
 import { AvaToAvar } from './AvaToAvar.js';
-import { AvarToAvak } from './AvarToAvak.js';
+import { AvarToAvay } from './AvarToAvay.js';
+import { AvayToAvaz } from './AvayToAvaz.js';
 import { MovePlayer } from './MovePlayer.js';
+
+const AVA_STAGES = new Set(['avar', 'avay', 'avaz']);
 
 export class AvatarViewport {
   constructor(container, callbacks = {}) {
@@ -33,11 +36,16 @@ export class AvatarViewport {
     };
     this.avaMoves = [];
     this.movePlayer = null;
-    this.useAvak = true;
+    this.avaStage = 'avar';
+    this.lastAvaPlayable = null;
   }
 
-  setUseAvak(enabled) {
-    this.useAvak = enabled;
+  setAvaStage(stage) {
+    this.avaStage = AVA_STAGES.has(stage) ? stage : 'avar';
+  }
+
+  getAvaStage() {
+    return this.avaStage;
   }
 
   start() {
@@ -274,6 +282,7 @@ export class AvatarViewport {
     this.stopFbxAnimation();
     this.stopAvaMove();
     this.movePlayer = null;
+    this.lastAvaPlayable = null;
     this.avaMoves = [];
 
     if (this.currentRoot) {
@@ -351,19 +360,26 @@ export class AvatarViewport {
 
     const avarBaker = new AvaToAvar(this.currentVrm, { modelPath: this.currentAvatarPath || 'avatar' });
     const avar = avarBaker.bake(move.ava);
-
     let clip = avar;
-    if (this.useAvak) {
-      const avakBaker = new AvarToAvak(this.currentVrm, { modelPath: this.currentAvatarPath || 'avatar' });
-      clip = avakBaker.bake(avar) || avar;
+    if (this.avaStage !== 'avar') {
+      const avayBaker = new AvarToAvay(this.currentVrm, { modelPath: this.currentAvatarPath || 'avatar' });
+      const avay = avayBaker.bake(avar) || avar;
+      clip = avay;
+
+      if (this.avaStage === 'avaz') {
+        const avazBaker = new AvayToAvaz(this.currentVrm, { modelPath: this.currentAvatarPath || 'avatar' });
+        clip = avazBaker.bake(avay) || avay;
+      }
     }
 
+    this.lastAvaPlayable = clip;
     this.movePlayer.play(clip);
     return true;
   }
 
   stopAvaMove() {
     this.movePlayer?.stop();
+    this.lastAvaPlayable = null;
   }
 
   getAvaStatus() {
@@ -384,6 +400,10 @@ export class AvatarViewport {
 
   getAvaMoveStatus() {
     return this.movePlayer?.getStatus() || { playing: false, time: 0, duration: 0 };
+  }
+
+  getLastAvaPlayable() {
+    return this.lastAvaPlayable;
   }
 
   getRigInfo(mode) {

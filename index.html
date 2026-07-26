@@ -174,10 +174,21 @@
             <output id="ava-speed-value">0.6x</output>
           </label>
 
-          <label class="toggle toggle-row">
-            <input id="ava-use-avak" type="checkbox" checked />
-            <span>Use AVAK (IK + balance)</span>
-          </label>
+          <fieldset class="stage-choice" aria-label="Playback stage">
+            <legend>Playback</legend>
+            <label>
+              <input type="radio" name="ava-stage" value="avar" checked />
+              <span>AVAR</span>
+            </label>
+            <label>
+              <input type="radio" name="ava-stage" value="avay" />
+              <span>AVAY</span>
+            </label>
+            <label>
+              <input type="radio" name="ava-stage" value="avaz" />
+              <span>AVAZ</span>
+            </label>
+          </fieldset>
 
           <div class="rig-list-header">
             <span>AVA Moves</span>
@@ -197,6 +208,10 @@
             <div>
               <dt>Tracks</dt>
               <dd id="ava-tracks">-</dd>
+            </div>
+            <div>
+              <dt>Stage</dt>
+              <dd id="ava-stage-active">AVAR</dd>
             </div>
             <div>
               <dt>Playback</dt>

@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { createAnimationClip } from './playableAnimation.js';
 
 export class MovePlayer {
   constructor(root) {
@@ -34,26 +35,9 @@ export class MovePlayer {
     this.stop();
     if (!avar?.tracks?.length || !this.root) return;
 
-    const boneMap = avar.target?.boneMap || {};
-    const tracks = avar.tracks
-      .map((track) => {
-        const nodeName = boneMap[track.bone];
-        if (!nodeName) return null;
+    this.clip = createAnimationClip(avar);
+    if (this.clip.tracks.length === 0) return;
 
-        const name = `${nodeName}.${track.property}`;
-        if (track.property === 'quaternion') {
-          return new THREE.QuaternionKeyframeTrack(name, track.times, track.values);
-        }
-        if (track.property === 'position') {
-          return new THREE.VectorKeyframeTrack(name, track.times, track.values);
-        }
-        return null;
-      })
-      .filter(Boolean);
-
-    if (tracks.length === 0) return;
-
-    this.clip = new THREE.AnimationClip(avar.name || 'avar', avar.duration, tracks);
     this.mixer = new THREE.AnimationMixer(this.root);
     this.action = this.mixer.clipAction(this.clip);
     this.action.setEffectiveTimeScale(this.timeScale);

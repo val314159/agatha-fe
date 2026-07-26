@@ -75,7 +75,8 @@ const els = {
   avaTracks: document.querySelector('#ava-tracks'),
   avaSpeed: document.querySelector('#ava-speed'),
   avaSpeedValue: document.querySelector('#ava-speed-value'),
-  avaUseAvak: document.querySelector('#ava-use-avak'),
+  avaStageInputs: [...document.querySelectorAll('input[name="ava-stage"]')],
+  avaStageActive: document.querySelector('#ava-stage-active'),
   metaSource: document.querySelector('#meta-source'),
   metaFormat: document.querySelector('#meta-format'),
   metaMeshes: document.querySelector('#meta-meshes'),
@@ -327,7 +328,10 @@ function playSelectedAva() {
   els.avaPlay.textContent = 'Baking';
 
   try {
-    viewport.playAvaMove(selectedAvaMove);
+    const played = viewport.playAvaMove(selectedAvaMove);
+    if (!played) {
+      throw new Error('Selected AVA move could not be played');
+    }
     playingAvaMove = selectedAvaMove;
     els.autoRotate.checked = false;
     viewport.setAutoRotate(false);
@@ -348,6 +352,7 @@ function stopAvaPlayback() {
 
 function updateAvaMetadata() {
   const move = viewport.getAvaMoves().find((m) => m.name === selectedAvaMove);
+  els.avaStageActive.textContent = viewport.getAvaStage().toUpperCase();
   if (!move) {
     els.avaActive.textContent = '-';
     els.avaDuration.textContent = '-';
@@ -533,11 +538,15 @@ els.moveFootLock.addEventListener('change', applyMoveOptions);
 els.avaPlay.addEventListener('click', playSelectedAva);
 els.avaStop.addEventListener('click', stopAvaPlayback);
 els.avaSpeed.addEventListener('input', applyAvaSpeed);
-els.avaUseAvak.addEventListener('change', () => {
-  viewport.setUseAvak(els.avaUseAvak.checked);
-  if (playingAvaMove) {
-    playSelectedAva();
-  }
+els.avaStageInputs.forEach((input) => {
+  input.addEventListener('change', () => {
+    if (!input.checked) return;
+    viewport.setAvaStage(input.value);
+    updateAvaMetadata();
+    if (playingAvaMove) {
+      playSelectedAva();
+    }
+  });
 });
 els.rigMode.addEventListener('change', clearRigSelection);
 els.rigSearch.addEventListener('input', renderRigList);
@@ -569,7 +578,8 @@ if (initialModel) {
     els.select.value = initialModel;
   }
   els.urlInput.value = initialModel;
-  viewport.loadAvatar(initialModel, presets.get(initialModel)?.name || initialModel);
+  await viewport.loadAvatar(initialModel, presets.get(initialModel)?.name || initialModel);
+  await reloadAvaMoves();
 } else {
   loadSelectedAvatar();
 }

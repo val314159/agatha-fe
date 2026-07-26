@@ -152,9 +152,12 @@ export function solveTwoBoneIK({
 
 export function captureFootPlant(foot, options = {}) {
   assertObject3D(foot, 'foot');
+  const anchor = options.anchor
+    ? readWorldPosition(options.anchor, new THREE.Vector3())
+    : getWorldPosition(foot, new THREE.Vector3());
   return {
     foot,
-    anchor: getWorldPosition(foot, new THREE.Vector3()),
+    anchor,
     weight: options.weight ?? 1,
     axes: options.axes || DEFAULT_PLANT_AXES,
   };
