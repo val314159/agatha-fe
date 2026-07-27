@@ -89,6 +89,7 @@ const els = {
   avaAnalysisLeftFoot: document.querySelector('#ava-analysis-left-foot'),
   avaAnalysisRightFoot: document.querySelector('#ava-analysis-right-foot'),
   avaAnalysisContacts: document.querySelector('#ava-analysis-contacts'),
+  avaAnalysisLayers: document.querySelector('#ava-analysis-layers'),
   avaContactList: document.querySelector('#ava-contact-list'),
   metaSource: document.querySelector('#meta-source'),
   metaFormat: document.querySelector('#meta-format'),
@@ -424,6 +425,9 @@ function renderAvaAnalysis() {
     : '-';
   els.avaAnalysisContacts.textContent = analysis
     ? `${analysis.contacts.length} windows`
+    : '-';
+  els.avaAnalysisLayers.textContent = playable?.layers?.length
+    ? playable.layers.map((layer) => layer.type).join(', ')
     : '-';
   renderContactList(analysis?.contacts || []);
 }

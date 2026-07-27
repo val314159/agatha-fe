@@ -97,22 +97,28 @@ export class AvarToAvay {
     }
 
     const configuredFloor = this.explicitGroundHeight ?? FLOOR_HEIGHT;
-    const minFootHeight = rawSamples.length > 0
-      ? Math.min(...rawSamples.map((sample) => sample.position[1]))
+    const plantedSamples = rawSamples.filter((sample) => sample.planted);
+    const minFootHeight = plantedSamples.length > 0
+      ? Math.min(...plantedSamples.map((sample) => sample.position[1]))
       : null;
     const minVisualHeight = boundsSamples.length > 0
       ? Math.min(...boundsSamples.map((sample) => sample.min[1]))
       : null;
+    const contactBaselines = getContactBaselines(plantedSamples);
     const minSampleHeight = Math.min(
       ...[minFootHeight, minVisualHeight].filter(Number.isFinite)
     );
     const groundHeight = this.explicitGroundHeight ?? minFootHeight ?? minSampleHeight;
     const footSamples = rawSamples.map((sample) => {
-      const height = sample.position[1] - groundHeight;
+      const contactGround = sample.planted
+        ? contactBaselines[sample.bone] ?? groundHeight
+        : groundHeight;
+      const height = sample.position[1] - contactGround;
       const nearGround = Math.abs(height) < this.plantHeightThreshold;
       const slow = !Number.isFinite(sample.velocity) || sample.velocity < this.plantVelocityThreshold;
       return {
         ...sample,
+        contactGround,
         height,
         floorClearance: sample.position[1] - configuredFloor,
         nearGround,
@@ -138,7 +144,7 @@ export class AvarToAvay {
     analysis.bounds = summarizeBoundsSamples(boundsSamples, configuredFloor);
     analysis.groundHeight = groundHeight;
     analysis.footSamples = footSamples;
-    analysis.contacts = this.buildContacts(footSamples, groundHeight);
+    analysis.contacts = this.buildContacts(footSamples);
     return analysis;
   }
 
@@ -213,7 +219,7 @@ export class AvarToAvay {
     return { footSamples, boundsSamples };
   }
 
-  buildContacts(samples, groundHeight) {
+  buildContacts(samples) {
     const byBone = new Map();
     for (const sample of samples) {
       if (!byBone.has(sample.bone)) {
@@ -231,7 +237,7 @@ export class AvarToAvay {
         if (sample.contact) {
           if (!active) {
             const anchor = sample.position.slice();
-            anchor[1] = groundHeight;
+            anchor[1] = sample.contactGround;
             active = {
               bone,
               chainName: sample.chainName,
@@ -364,13 +370,24 @@ function summarizeFootSamples(samples, floorHeight) {
       velocity: range(velocities),
       averageVelocity: average(velocities),
       travel: pathLength(positions),
-    belowFloorSamples: boneSamples.filter((sample) => isBelowFloor(sample.position[1], floorHeight)).length,
+      belowFloorSamples: boneSamples.filter((sample) => isBelowFloor(sample.position[1], floorHeight)).length,
       contactSamples: boneSamples.filter((sample) => sample.contact).length,
       minFloorClearance: Math.min(...boneSamples.map((sample) => sample.floorClearance)),
     };
   }
 
   return summary;
+}
+
+function getContactBaselines(samples) {
+  const baselines = {};
+  for (const sample of samples) {
+    const y = sample.position[1];
+    baselines[sample.bone] = Number.isFinite(baselines[sample.bone])
+      ? Math.min(baselines[sample.bone], y)
+      : y;
+  }
+  return baselines;
 }
 
 function summarizeBoundsSamples(samples, floorHeight) {
@@ -384,9 +401,9 @@ function summarizeBoundsSamples(samples, floorHeight) {
     samples: samples.length,
     minY: range(minY),
     maxY: range(maxY),
-      height: range(heights),
+    height: range(heights),
     belowFloorSamples: samples.filter((sample) => isBelowFloor(sample.min[1], floorHeight)).length,
-      minFloorClearance: Math.min(...samples.map((sample) => sample.min[1] - floorHeight)),
+    minFloorClearance: Math.min(...samples.map((sample) => sample.min[1] - floorHeight)),
   };
 }
 

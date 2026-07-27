@@ -1,8 +1,11 @@
 import * as THREE from 'three';
 import {
+  applyWorldOffset,
   applyFootPlantHipOffset,
   captureFootPlant,
+  derivePoleDirection,
   getNormalizedLimbChain,
+  makePolePoint as makeIkPolePoint,
   solveLimbIK,
 } from './ik.js';
 import {
@@ -18,6 +21,8 @@ const VRM_LIMB_CHAINS = {
   rightLeg: ['rightUpperLeg', 'rightLowerLeg', 'rightFoot'],
 };
 const TIME_EPSILON = 1e-5;
+const FLOOR_CLEARANCE_EPSILON = 1e-4;
+const FLOOR_CLEARANCE_PADDING = 0.002;
 
 export class SimpleBalanceSolver {
   constructor(options = {}) {
@@ -59,23 +64,10 @@ export class AvayToAvaz {
   bake(avay) {
     if (!avay?.tracks?.length) return null;
 
-    const contacts = this.normalizeContacts(avay.analysis?.contacts || []);
-    if (contacts.length === 0) {
-      return {
-        ...avay,
-        format: 'avaz',
-        basis: 'solved',
-        sourceFormat: avay.format,
-        target: cloneTarget(avay.target),
-        tracks: avay.tracks.map((track) => ({
-          bone: track.bone,
-          property: track.property,
-          times: Array.from(track.times || []),
-          values: Array.from(track.values || []),
-        })),
-        locks: cloneLocks(avay.locks || []),
-        layers: [],
-      };
+    const floorClearance = this.getFloorClearance(avay.analysis);
+    const contacts = this.normalizeContacts(avay.analysis?.contacts || [], floorClearance);
+    if (!floorClearance && contacts.length === 0) {
+      return createIdentityAvaz(avay);
     }
 
     const clip = createAnimationClip(avay);
@@ -84,6 +76,7 @@ export class AvayToAvaz {
     action.play();
 
     const times = collectTrackTimes(avay.tracks);
+    const layers = [];
     const correctedKeyframes = new Map();
     for (const chainName of new Set(contacts.map((contact) => contact.chainName))) {
       correctedKeyframes.set(chainName, {
@@ -93,30 +86,43 @@ export class AvayToAvaz {
       });
     }
     const hipKeyframes = { times: [], values: [] };
+    const balanceStats = { applied: 0, maxCorrection: 0 };
+    const shouldExtractHips = Boolean(floorClearance || contacts.length > 0);
 
     for (const t of times) {
       mixer.setTime(t);
       this.vrm.update?.(0);
       this.vrm.scene.updateWorldMatrix(true, true);
 
+      this.applyFloorClearance(floorClearance);
+
       const activeContacts = contacts.filter((contact) => isContactActive(contact, t));
       const solve = () => {
         for (const contact of activeContacts) {
           const limbChain = getNormalizedLimbChain(this.vrm, contact.chainName);
           if (!limbChain) continue;
-          solveLimbIK(limbChain, contact.anchor, null);
+          solveLimbIK(limbChain, contact.anchor, this.makePolePoint(limbChain));
         }
       };
 
       for (let iter = 0; iter < this.iterations; iter += 1) {
         solve();
         if (this.balanceSolver) {
-          this.balanceSolver.solve(this.vrm, this.getPlantedFeet(activeContacts), solve);
+          const result = this.balanceSolver.solve(this.vrm, this.getPlantedFeet(activeContacts), solve);
+          if (result?.applied) {
+            balanceStats.applied += 1;
+            balanceStats.maxCorrection = Math.max(
+              balanceStats.maxCorrection,
+              result.correction?.length?.() || 0
+            );
+          }
         }
       }
 
       this.extractCorrectedChainKeyframes(correctedKeyframes, t);
-      this.extractHipKeyframe(hipKeyframes, t);
+      if (shouldExtractHips) {
+        this.extractHipKeyframe(hipKeyframes, t);
+      }
     }
 
     mixer.setTime(0);
@@ -126,6 +132,33 @@ export class AvayToAvaz {
     const newTracks = this.buildTracks(correctedKeyframes, hipKeyframes);
     const correctedProperties = new Set(newTracks.map(trackKey));
     const unchangedTracks = avay.tracks.filter((track) => !correctedProperties.has(trackKey(track)));
+
+    if (floorClearance) {
+      layers.push({
+        type: 'floorClearance',
+        source: 'avay.analysis.floor',
+        correction: floorClearance.toArray(),
+        correctionY: floorClearance.y,
+        affectedProperties: ['hips.position'],
+      });
+    }
+    if (contacts.length > 0) {
+      layers.push({
+        type: 'footPlantIK',
+        source: 'avay.analysis.contacts',
+        contactCount: contacts.length,
+        affectedProperties: Array.from(correctedProperties).filter((key) => key !== 'hips.position'),
+      });
+    }
+    if (balanceStats.applied > 0) {
+      layers.push({
+        type: 'balance',
+        source: 'active foot plant contacts',
+        applications: balanceStats.applied,
+        maxCorrection: balanceStats.maxCorrection,
+        affectedProperties: ['hips.position'],
+      });
+    }
 
     return {
       format: 'avaz',
@@ -143,28 +176,39 @@ export class AvayToAvaz {
       tracks: [...unchangedTracks, ...newTracks],
       locks: cloneLocks(avay.locks || []),
       analysis: avay.analysis,
-      layers: [
-        {
-          type: 'footPlantIK',
-          source: 'avay.analysis.contacts',
-          contactCount: contacts.length,
-          affectedProperties: Array.from(correctedProperties),
-        },
-      ],
+      layers,
     };
   }
 
-  normalizeContacts(contacts) {
+  getFloorClearance(analysis) {
+    const penetrationDepth = Number(analysis?.floor?.penetrationDepth || 0);
+    if (penetrationDepth <= FLOOR_CLEARANCE_EPSILON) return null;
+    return new THREE.Vector3(0, penetrationDepth + FLOOR_CLEARANCE_PADDING, 0);
+  }
+
+  applyFloorClearance(floorClearance) {
+    if (!floorClearance) return;
+    const hips = this.vrm.humanoid?.getNormalizedBoneNode('hips');
+    if (!hips) return;
+    applyWorldOffset(hips, floorClearance);
+    this.vrm.scene.updateWorldMatrix(true, true);
+  }
+
+  normalizeContacts(contacts, floorClearance = null) {
     return contacts
       .map((contact) => {
         const bones = VRM_LIMB_CHAINS[contact.chainName];
         if (!bones || !Array.isArray(contact.anchor)) return null;
+        const anchor = new THREE.Vector3().fromArray(contact.anchor);
+        if (floorClearance) {
+          anchor.add(floorClearance);
+        }
         return {
           bone: contact.bone,
           chainName: contact.chainName,
           start: Number(contact.start),
           end: Number(contact.end),
-          anchor: new THREE.Vector3().fromArray(contact.anchor),
+          anchor,
         };
       })
       .filter((contact) => (
@@ -182,6 +226,15 @@ export class AvayToAvaz {
         return captureFootPlant(foot, { anchor: contact.anchor, weight: 1 });
       })
       .filter(Boolean);
+  }
+
+  makePolePoint(limbChain) {
+    const rootPosition = limbChain.root.getWorldPosition(new THREE.Vector3());
+    const midPosition = limbChain.mid.getWorldPosition(new THREE.Vector3());
+    const endPosition = limbChain.end.getWorldPosition(new THREE.Vector3());
+    const poleDirection = derivePoleDirection(rootPosition, endPosition, midPosition);
+    const distance = Math.max(rootPosition.distanceTo(endPosition), 0.25);
+    return makeIkPolePoint(rootPosition, poleDirection, distance);
   }
 
   extractCorrectedChainKeyframes(correctedKeyframes, t) {
@@ -272,4 +325,22 @@ export class AvayToAvaz {
 
 function isContactActive(contact, time) {
   return time + TIME_EPSILON >= contact.start && time - TIME_EPSILON <= contact.end;
+}
+
+function createIdentityAvaz(avay) {
+  return {
+    ...avay,
+    format: 'avaz',
+    basis: 'solved',
+    sourceFormat: avay.format,
+    target: cloneTarget(avay.target),
+    tracks: avay.tracks.map((track) => ({
+      bone: track.bone,
+      property: track.property,
+      times: Array.from(track.times || []),
+      values: Array.from(track.values || []),
+    })),
+    locks: cloneLocks(avay.locks || []),
+    layers: [],
+  };
 }
