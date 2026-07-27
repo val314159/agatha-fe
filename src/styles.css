@@ -535,7 +535,8 @@ output {
 }
 
 .move-meta,
-.fbx-meta {
+.fbx-meta,
+.analysis-meta {
   display: grid;
   gap: 0.5rem;
   margin: 0;
@@ -544,7 +545,8 @@ output {
 }
 
 .move-meta div,
-.fbx-meta div {
+.fbx-meta div,
+.analysis-meta div {
   display: grid;
   grid-template-columns: 5.4rem minmax(0, 1fr);
   gap: 0.55rem;
@@ -552,7 +554,8 @@ output {
 }
 
 .move-meta dt,
-.fbx-meta dt {
+.fbx-meta dt,
+.analysis-meta dt {
   color: #6b7b80;
   font-size: 0.68rem;
   font-weight: 800;
@@ -560,13 +563,51 @@ output {
 }
 
 .move-meta dd,
-.fbx-meta dd {
+.fbx-meta dd,
+.analysis-meta dd {
   min-width: 0;
   margin: 0;
   overflow-wrap: anywhere;
   color: #172024;
   font-size: 0.8rem;
   line-height: 1.25;
+}
+
+.analysis-meta {
+  gap: 0.42rem;
+  padding-top: 0;
+}
+
+.analysis-meta div {
+  grid-template-columns: 4.8rem minmax(0, 1fr);
+}
+
+.analysis-meta dd {
+  font-size: 0.76rem;
+}
+
+.contact-list {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.contact-item {
+  display: grid;
+  gap: 0.18rem;
+  border: 1px solid #d4dddf;
+  border-radius: 6px;
+  background: #ffffff;
+  padding: 0.45rem 0.55rem;
+  color: #172024;
+  font-size: 0.74rem;
+}
+
+.contact-item strong {
+  font-size: 0.76rem;
+}
+
+.contact-item span {
+  color: #526268;
 }
 
 .rig-list-header {

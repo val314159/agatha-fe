@@ -357,6 +357,8 @@ export class AvatarViewport {
     if (!move) return false;
 
     this.moveSystem.setPlaying(false);
+    this.movePlayer.stop();
+    this.resetCurrentVrmPose();
 
     const avarBaker = new AvaToAvar(this.currentVrm, { modelPath: this.currentAvatarPath || 'avatar' });
     const avar = avarBaker.bake(move.ava);
@@ -379,7 +381,12 @@ export class AvatarViewport {
 
   stopAvaMove() {
     this.movePlayer?.stop();
-    this.lastAvaPlayable = null;
+  }
+
+  resetCurrentVrmPose() {
+    this.currentVrm?.humanoid?.resetNormalizedPose?.();
+    this.currentVrm?.update?.(0);
+    this.currentRoot?.updateWorldMatrix(true, true);
   }
 
   getAvaStatus() {

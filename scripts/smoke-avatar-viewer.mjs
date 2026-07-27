@@ -163,6 +163,20 @@ async function runCheck(browser, check) {
       await page.waitForFunction((expectedStage) => {
         return document.querySelector('#ava-stage-active')?.textContent === expectedStage.toUpperCase();
       }, stage);
+      if (stage !== 'avar') {
+        await page.waitForFunction((expectedStage) => {
+          const analysisState = document.querySelector('#ava-analysis-state')?.textContent;
+          const fps = document.querySelector('#ava-analysis-fps')?.textContent;
+          const penetration = document.querySelector('#ava-analysis-penetration')?.textContent;
+          return (
+            analysisState === expectedStage.toUpperCase() &&
+            fps &&
+            fps !== '-' &&
+            penetration &&
+            penetration !== '-'
+          );
+        }, stage);
+      }
       await page.click('#ava-stop');
     }
   }

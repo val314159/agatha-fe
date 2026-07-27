@@ -77,6 +77,19 @@ const els = {
   avaSpeedValue: document.querySelector('#ava-speed-value'),
   avaStageInputs: [...document.querySelectorAll('input[name="ava-stage"]')],
   avaStageActive: document.querySelector('#ava-stage-active'),
+  avaAnalysisState: document.querySelector('#ava-analysis-state'),
+  avaAnalysisFps: document.querySelector('#ava-analysis-fps'),
+  avaAnalysisKeys: document.querySelector('#ava-analysis-keys'),
+  avaAnalysisTracks: document.querySelector('#ava-analysis-tracks'),
+  avaAnalysisGround: document.querySelector('#ava-analysis-ground'),
+  avaAnalysisPenetration: document.querySelector('#ava-analysis-penetration'),
+  avaAnalysisMeshY: document.querySelector('#ava-analysis-mesh-y'),
+  avaAnalysisHipY: document.querySelector('#ava-analysis-hip-y'),
+  avaAnalysisHipTravel: document.querySelector('#ava-analysis-hip-travel'),
+  avaAnalysisLeftFoot: document.querySelector('#ava-analysis-left-foot'),
+  avaAnalysisRightFoot: document.querySelector('#ava-analysis-right-foot'),
+  avaAnalysisContacts: document.querySelector('#ava-analysis-contacts'),
+  avaContactList: document.querySelector('#ava-contact-list'),
   metaSource: document.querySelector('#meta-source'),
   metaFormat: document.querySelector('#meta-format'),
   metaMeshes: document.querySelector('#meta-meshes'),
@@ -357,12 +370,14 @@ function updateAvaMetadata() {
     els.avaActive.textContent = '-';
     els.avaDuration.textContent = '-';
     els.avaTracks.textContent = '-';
+    renderAvaAnalysis();
     return;
   }
 
   els.avaActive.textContent = move.name;
   els.avaDuration.textContent = move.ava.duration ? `${move.ava.duration.toFixed(2)}s` : '-';
   els.avaTracks.textContent = move.ava.tracks?.length ? String(move.ava.tracks.length) : '-';
+  renderAvaAnalysis();
 }
 
 function updateAvaStatus(status) {
@@ -371,6 +386,92 @@ function updateAvaStatus(status) {
     const pct = status.duration > 0 ? Math.round((status.time / status.duration) * 100) : 0;
     statusTime.textContent = `${status.time.toFixed(2)}s / ${status.duration.toFixed(2)}s (${pct}%)`;
   }
+}
+
+function renderAvaAnalysis() {
+  const playable = viewport.getLastAvaPlayable();
+  const stage = viewport.getAvaStage();
+  const analysis = playable?.name === selectedAvaMove && playable?.format === stage
+    ? playable.analysis
+    : null;
+
+  els.avaAnalysisState.textContent = analysis ? stage.toUpperCase() : '-';
+  els.avaAnalysisFps.textContent = analysis ? `${formatOne(analysis.timing.nominalFrameRate)} fps` : '-';
+  els.avaAnalysisKeys.textContent = analysis ? String(analysis.timing.keyframeCount) : '-';
+  els.avaAnalysisTracks.textContent = analysis
+    ? `${analysis.tracks.total} (${analysis.tracks.quaternion}q/${analysis.tracks.position}p)`
+    : '-';
+  els.avaAnalysisGround.textContent = analysis
+    ? `floor ${formatMeters(analysis.floor.configuredHeight)}  est ${formatMeters(analysis.floor.estimatedHeight)}`
+    : '-';
+  els.avaAnalysisPenetration.textContent = analysis
+    ? `${formatMeters(analysis.floor.penetrationDepth)} (${analysis.floor.belowFloorSamples})`
+    : '-';
+  els.avaAnalysisMeshY.textContent = analysis?.bounds
+    ? `${formatMeters(analysis.bounds.minY.min)} .. ${formatMeters(analysis.bounds.minY.max)}`
+    : '-';
+  els.avaAnalysisHipY.textContent = analysis?.hips
+    ? `${formatMeters(analysis.hips.y.min)} .. ${formatMeters(analysis.hips.y.max)}`
+    : '-';
+  els.avaAnalysisHipTravel.textContent = analysis?.hips
+    ? `${formatMeters(analysis.hips.horizontalTravel)} xz / ${formatMeters(analysis.hips.travel)}`
+    : '-';
+  els.avaAnalysisLeftFoot.textContent = analysis?.feet?.leftFoot
+    ? formatFootSummary(analysis.feet.leftFoot)
+    : '-';
+  els.avaAnalysisRightFoot.textContent = analysis?.feet?.rightFoot
+    ? formatFootSummary(analysis.feet.rightFoot)
+    : '-';
+  els.avaAnalysisContacts.textContent = analysis
+    ? `${analysis.contacts.length} windows`
+    : '-';
+  renderContactList(analysis?.contacts || []);
+}
+
+function renderContactList(contacts) {
+  els.avaContactList.textContent = '';
+
+  contacts.slice(0, 8).forEach((contact) => {
+    const item = document.createElement('div');
+    item.className = 'contact-item';
+
+    const title = document.createElement('strong');
+    title.textContent = `${contact.bone} ${formatSeconds(contact.start)}-${formatSeconds(contact.end)}`;
+
+    const details = document.createElement('span');
+    details.textContent = `anchor ${formatVectorArray(contact.anchor)}  samples ${contact.sampleCount}  conf ${formatOne(contact.confidence)}`;
+
+    item.append(title, details);
+    els.avaContactList.appendChild(item);
+  });
+
+  if (contacts.length > 8) {
+    const extra = document.createElement('div');
+    extra.className = 'contact-item';
+    extra.textContent = `${contacts.length - 8} more contact windows`;
+    els.avaContactList.appendChild(extra);
+  }
+}
+
+function formatFootSummary(summary) {
+  return `y ${formatMeters(summary.worldY.min)}..${formatMeters(summary.worldY.max)}  v ${formatMeters(summary.averageVelocity)}/s`;
+}
+
+function formatVectorArray(values) {
+  if (!Array.isArray(values) || values.length < 3) return '-';
+  return `x ${formatNumber(values[0])} y ${formatNumber(values[1])} z ${formatNumber(values[2])}`;
+}
+
+function formatSeconds(value) {
+  return `${Number(value).toFixed(2)}s`;
+}
+
+function formatMeters(value) {
+  return `${formatNumber(value)}m`;
+}
+
+function formatOne(value) {
+  return Number(value).toFixed(1);
 }
 
 function renderRigList() {
